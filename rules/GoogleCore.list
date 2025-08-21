@@ -21,13 +21,5 @@ DOMAIN-SUFFIX,g.co
 DOMAIN-SUFFIX,goo.gl
 DOMAIN-SUFFIX,pki.goog
 
-# ——— ОСНОВНЫЕ GOOGLEAPIS ДЛЯ ПРИЛОЖЕНИЙ (БЕЗ youtube* и БЕЗ generativelanguage*) ———
+# ——— ОСНОВНЫЕ GOOGLEAPIS ДЛЯ ПРИЛОЖЕНИЙ ———
 DOMAIN-SUFFIX,googleapis.com
-DOMAIN,oauth2.googleapis.com
-DOMAIN,people.googleapis.com
-DOMAIN,drive.googleapis.com
-DOMAIN,photoslibrary.googleapis.com
-DOMAIN,maps.googleapis.com
-DOMAIN,safebrowsing.googleapis.com
-DOMAIN,storage.googleapis.com
-DOMAIN,fonts.googleapis.com
