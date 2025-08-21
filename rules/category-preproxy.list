@@ -1,3 +1,8 @@
+# NAME: PreProxy List
+# DESC: Ставится выше списка DIRECT, что бы работали отдельные модули поставщика (например google - direct а youtube будет через proxy)
+# AUTHOR: Proms
+# UPDATED: 2025-08-21
+
 # YOUTUBE
 DOMAIN-SUFFIX,youtube.com
 DOMAIN,youtu.be
@@ -10,9 +15,9 @@ DOMAIN,youtube.googleapis.com
 DOMAIN,youtube-ui.l.google.com
 DOMAIN-KEYWORD,youtube
 DOMAIN-SUFFIX,video.google.com
-USER-AGENT,*youtube*
-USER-AGENT,YouTube*
 USER-AGENT,com.google.ios.youtube*
+USER-AGENT,*youtube*
+USER-AGENT,*YouTube*
 
 # GOOGLE GEMINI
 DOMAIN,ai.google.dev
