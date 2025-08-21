@@ -1,0 +1,42 @@
+# NAME: Apple-Core_Resolve (minimal)
+# DESC: Минимальный список для прямого доступа к сервисам Apple, включая iCloud Private Relay и Apple Intelligence (PCC)
+# AUTHOR: Proms
+# SOURCE: Apple Support “Use Apple products on enterprise networks”
+# UPDATED: 2025-08-21
+# DOMAIN: 4
+# DOMAIN-SUFFIX: 14
+# IP-CIDR: 1
+# IP-CIDR6: 3
+# TOTAL: 22
+
+# ——— База: пускаем всё *.apple.com напрямую (Store, Music, TV, Arcade, обновления, APNs, Siri, карты и т. д.) ———
+DOMAIN-SUFFIX,apple.com
+
+# Часто используемые зоны КРОМЕ apple.com (ассеты, картинки, CDN, карты, iCloud)
+DOMAIN-SUFFIX,mzstatic.com
+DOMAIN-SUFFIX,aaplimg.com
+DOMAIN-SUFFIX,cdn-apple.com
+DOMAIN-SUFFIX,apple-mapkit.com
+DOMAIN-SUFFIX,apple-cloudkit.com
+DOMAIN-SUFFIX,apple-livephotoskit.com
+DOMAIN-SUFFIX,icloud.com
+DOMAIN-SUFFIX,icloud-content.com
+DOMAIN-SUFFIX,itunes.com
+DOMAIN-SUFFIX,me.com
+
+# ——— iCloud Private Relay ———
+DOMAIN,mask.icloud.com
+DOMAIN,mask-h2.icloud.com
+DOMAIN,mask-api.icloud.com
+
+# ——— Apple Intelligence / Private Cloud Compute ———
+#DOMAIN-SUFFIX,apple-relay.apple.com
+#DOMAIN-SUFFIX,apple-relay.cloudflare.com
+#DOMAIN-SUFFIX,apple-relay.fastly-edge.com
+#DOMAIN,cp4.cloudflare.com
+
+# ——— IP-диапазоны Apple ———
+IP-CIDR,17.0.0.0/8,no-resolve
+IP-CIDR6,2403:300::/32,no-resolve
+IP-CIDR6,2620:149::/32,no-resolve
+IP-CIDR6,2a01:b740::/32,no-resolve
