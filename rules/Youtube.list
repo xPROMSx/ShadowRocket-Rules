@@ -7,8 +7,8 @@
 # TOTAL: 9
 
 # ——— Основные веб-хосты/ссылки ———
-DOMAIN-SUFFIX,youtube.com          # www, m, music, studio, nocookie и др.
-DOMAIN,youtu.be                    # короткие ссылки
+DOMAIN-SUFFIX,youtube.com
+DOMAIN,youtu.be
 
 # ——— Видеопотоки и статика ———
 DOMAIN-SUFFIX,googlevideo.com 
