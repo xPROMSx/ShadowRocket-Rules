@@ -9,6 +9,7 @@
 # ——— Основные веб-хосты/ссылки ———
 DOMAIN-SUFFIX,youtube.com
 DOMAIN,youtu.be
+DOMAIN,yt.be
 
 # ——— Видеопотоки и статика ———
 DOMAIN-SUFFIX,googlevideo.com 
