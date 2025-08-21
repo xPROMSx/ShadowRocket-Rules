@@ -1,0 +1,49 @@
+# NAME: Google-Core_Resolve (minimal, no-YouTube, no-Gemini)
+# DESC: Часто используемые домены Google для DIRECT. YouTube и Gemini/DeepMind намеренно отсутствуют.
+# AUTHOR: Proms
+# SOURCE: Google Workspace host name allowlist; Google Maps Domains
+# UPDATED: 2025-08-21
+# DOMAIN: 24
+# DOMAIN-SUFFIX: 9
+# IP-CIDR: 0
+# IP-CIDR6: 0
+# TOTAL: 33
+
+# ——— БАЗОВЫЕ ВЕБ-СЕРВИСЫ GOOGLE (без *.youtube* и без gemini.*) ———
+DOMAIN-SUFFIX,google.com
+DOMAIN,www.google.com
+DOMAIN,accounts.google.com
+DOMAIN,mail.google.com
+DOMAIN,calendar.google.com
+DOMAIN,contacts.google.com
+DOMAIN,drive.google.com
+DOMAIN,docs.google.com
+DOMAIN,sheets.google.com
+DOMAIN,slides.google.com
+DOMAIN,keep.google.com
+DOMAIN,photos.google.com
+DOMAIN,maps.google.com
+DOMAIN,translate.google.com
+DOMAIN,news.google.com
+DOMAIN,support.google.com
+DOMAIN,mtalk.google.com
+
+# ——— ОБЩИЕ СТАТИЧЕСКИЕ РЕСУРСЫ/АССЕТЫ ———
+DOMAIN-SUFFIX,gstatic.com
+DOMAIN-SUFFIX,googleusercontent.com
+DOMAIN-SUFFIX,recaptcha.net
+DOMAIN-SUFFIX,withgoogle.com
+DOMAIN-SUFFIX,g.co
+DOMAIN-SUFFIX,goo.gl
+DOMAIN-SUFFIX,pki.goog
+
+# ——— ОСНОВНЫЕ GOOGLEAPIS ДЛЯ ПРИЛОЖЕНИЙ (БЕЗ youtube* и БЕЗ generativelanguage*) ———
+DOMAIN,www.googleapis.com
+DOMAIN,oauth2.googleapis.com
+DOMAIN,people.googleapis.com
+DOMAIN,drive.googleapis.com
+DOMAIN,photoslibrary.googleapis.com
+DOMAIN,maps.googleapis.com
+DOMAIN,safebrowsing.googleapis.com
+DOMAIN,storage.googleapis.com
+DOMAIN,fonts.googleapis.com
