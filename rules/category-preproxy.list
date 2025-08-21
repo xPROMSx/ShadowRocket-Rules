@@ -1,0 +1,39 @@
+# ——— Основные веб-хосты/ссылки ———
+DOMAIN-SUFFIX,youtube.com
+DOMAIN,youtu.be
+DOMAIN,yt.be
+
+# ——— Видеопотоки и статика ———
+DOMAIN-SUFFIX,googlevideo.com 
+DOMAIN-SUFFIX,ytimg.com
+DOMAIN-SUFFIX,ggpht.com
+
+# ——— API/интерфейсы плеера ———
+DOMAIN,youtubei.googleapis.com
+DOMAIN,youtube.googleapis.com
+DOMAIN,youtube-ui.l.google.com
+
+# ——— Other ———
+DOMAIN-KEYWORD,youtube
+DOMAIN-SUFFIX,video.google.com
+USER-AGENT,*YouTubeMusic*
+USER-AGENT,*com.google.ios.youtubemusic*
+USER-AGENT,*youtube*
+USER-AGENT,YouTube*
+USER-AGENT,YouTubeMusic*
+USER-AGENT,com.google.ios.youtube*
+USER-AGENT,com.google.ios.youtubemusic*
+
+DOMAIN,ai.google.dev
+DOMAIN,alkalimakersuite-pa.clients6.google.com
+DOMAIN,makersuite.google.com
+DOMAIN-SUFFIX,bard.google.com
+DOMAIN-SUFFIX,deepmind.com
+DOMAIN-SUFFIX,deepmind.google
+DOMAIN-SUFFIX,gemini.google.com
+DOMAIN-SUFFIX,generativeai.google
+DOMAIN-SUFFIX,proactivebackend-pa.googleapis.com
+DOMAIN-SUFFIX,apis.google.com
+DOMAIN-KEYWORD,colab
+DOMAIN-KEYWORD,developerprofiles
+DOMAIN-KEYWORD,generativelanguage
