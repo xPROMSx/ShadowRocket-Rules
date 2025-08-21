@@ -1,0 +1,32 @@
+# NAME: YouTube-Core_Resolve (minimal)
+# DESC: Ключевые домены YouTube для прокси (без региональных доменов и дублей)
+# AUTHOR: Proms
+# UPDATED: 2025-08-21
+# DOMAIN: 3
+# DOMAIN-SUFFIX: 6
+# TOTAL: 9
+
+# ——— Основные веб-хосты/ссылки ———
+DOMAIN-SUFFIX,youtube.com          # www, m, music, studio, nocookie и др.
+DOMAIN,youtu.be                    # короткие ссылки
+
+# ——— Видеопотоки и статика ———
+DOMAIN-SUFFIX,googlevideo.com 
+DOMAIN-SUFFIX,ytimg.com
+DOMAIN-SUFFIX,ggpht.com
+
+# ——— API/интерфейсы плеера ———
+DOMAIN,youtubei.googleapis.com
+DOMAIN,youtube.googleapis.com
+DOMAIN,youtube-ui.l.google.com
+
+# ——— Other ———
+DOMAIN-KEYWORD,youtube
+DOMAIN-SUFFIX,video.google.com
+USER-AGENT,*YouTubeMusic*
+USER-AGENT,*com.google.ios.youtubemusic*
+USER-AGENT,*youtube*
+USER-AGENT,YouTube*
+USER-AGENT,YouTubeMusic*
+USER-AGENT,com.google.ios.youtube*
+USER-AGENT,com.google.ios.youtubemusic*
