@@ -1,6 +1,6 @@
 # NAME: Google-Core_Resolve (minimal, no-YouTube, no-Gemini)
 # DESC: Часто используемые домены Google для DIRECT. YouTube и Gemini/DeepMind намеренно отсутствуют.
-# AUTHOR: Proms
+# AUTHOR: Proms #
 # SOURCE: Google Workspace host name allowlist; Google Maps Domains
 # UPDATED: 2025-08-21
 # DOMAIN: 24
