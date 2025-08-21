@@ -11,7 +11,6 @@
 
 # ——— БАЗОВЫЕ ВЕБ-СЕРВИСЫ GOOGLE (без *.youtube* и без gemini.*) ———
 DOMAIN-SUFFIX,google.com
-DOMAIN-SUFFIX,www.google.com
 DOMAIN,www.google.com
 DOMAIN,accounts.google.com
 DOMAIN,mail.google.com
