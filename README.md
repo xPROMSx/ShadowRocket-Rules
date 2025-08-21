@@ -1,0 +1,2 @@
+# ShadowRocket-Rules
+IOS
