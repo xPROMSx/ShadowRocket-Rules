@@ -10,13 +10,9 @@ DOMAIN,youtube.googleapis.com
 DOMAIN,youtube-ui.l.google.com
 DOMAIN-KEYWORD,youtube
 DOMAIN-SUFFIX,video.google.com
-USER-AGENT,*YouTubeMusic*
-USER-AGENT,*com.google.ios.youtubemusic*
 USER-AGENT,*youtube*
 USER-AGENT,YouTube*
-USER-AGENT,YouTubeMusic*
 USER-AGENT,com.google.ios.youtube*
-USER-AGENT,com.google.ios.youtubemusic*
 
 # GOOGLE GEMINI
 DOMAIN,ai.google.dev
