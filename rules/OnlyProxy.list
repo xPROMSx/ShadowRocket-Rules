@@ -198,6 +198,15 @@ DOMAIN-SUFFIX,threads.net
 # WhatsApp
 DOMAIN-SUFFIX,whatsapp.com
 DOMAIN-SUFFIX,whatsapp.net
+DOMAIN-SUFFIX,wa.me
+DOMAIN-SUFFIX,whatsapp-plus.info
+DOMAIN-SUFFIX,whatsapp-plus.me
+DOMAIN-SUFFIX,whatsapp-plus.net
+DOMAIN-SUFFIX,whatsapp.cc
+DOMAIN-SUFFIX,whatsapp.info
+DOMAIN-SUFFIX,whatsapp.org
+DOMAIN-SUFFIX,whatsapp.tv
+DOMAIN-SUFFIX,whatsappbrand.com
 # Доп. служебные/наследие
 DOMAIN-SUFFIX,accountkit.com
 DOMAIN,graph.facebook.com
@@ -250,6 +259,21 @@ DOMAIN-SUFFIX,grok.com
 DOMAIN-SUFFIX,x.ai
 
 ################################
+# SPEEDTEST
+################################
+DOMAIN-SUFFIX,cdnst.net
+DOMAIN-SUFFIX,cellmaps.com
+DOMAIN-SUFFIX,ekahau.cloud
+DOMAIN-SUFFIX,ekahau.com
+DOMAIN-SUFFIX,ookla.com
+DOMAIN-SUFFIX,ooklaserver.net
+DOMAIN-SUFFIX,pingtest.net
+DOMAIN-SUFFIX,speedtest.co
+DOMAIN-SUFFIX,speedtest.net
+DOMAIN-SUFFIX,speedtestcustom.com
+DOMAIN-SUFFIX,webtest.net
+
+################################
 # Диагностика/проверка IP
 ################################
 DOMAIN-SUFFIX,2ip.io
@@ -263,3 +287,4 @@ DOMAIN-SUFFIX,nnmclub.to
 DOMAIN-SUFFIX,rutor.is
 DOMAIN-SUFFIX,kinozal.tv
 DOMAIN-SUFFIX,news.google.com
+DOMAIN-SUFFIX,microsoft.com
