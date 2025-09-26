@@ -1,34 +1,63 @@
-# NAME: Services (selected)
-# DESC: Сгруппированные правила для Shadowrocket (оптимизированные по доменным суффиксам/ключевым словам + сети Cloudflare)
+# NAME: category-proxy-ai-media
+# DESC: сервисы, которые должны идти через PROXY (AI, видео, соцсети, диагностика, Cloudflare)
 # AUTHOR: Proms
 # UPDATED: 2025-09-26
-# SOURCE: v2fly/geosite + ручная верификация доменов/подсетей из официальной документации и справок
 
-# --- CLOUDFLARE (домены + официальные подсети) ---
-# домены (сервисы DNS/1.1.1.1, WARP и общие)
+################################
+# CLOUDFLARE (домены + официальные подсети)
+################################
+# Общие продукты/службы
 DOMAIN-SUFFIX,cloudflare.com
-DOMAIN-SUFFIX,cloudflare-dns.com
-DOMAIN-SUFFIX,cloudflareclient.com
-DOMAIN-SUFFIX,one.one.one.one
-DOMAIN-SUFFIX,cloudflareinsights.com
 DOMAIN-SUFFIX,cloudflare.net
-# подсети IPv4 (официальный список)
+DOMAIN-SUFFIX,cloudflare.tv
+DOMAIN-SUFFIX,cloudflareaccess.com
+DOMAIN-SUFFIX,cloudflareapps.com
+DOMAIN-SUFFIX,cloudflareclient.com
+DOMAIN-SUFFIX,cloudflareinsights.com
+DOMAIN-SUFFIX,cloudflareok.com
+DOMAIN-SUFFIX,cloudflarepartners.com
+DOMAIN-SUFFIX,cloudflareportal.com
+DOMAIN-SUFFIX,cloudflarepreview.com
+DOMAIN-SUFFIX,cloudflareresolve.com
+DOMAIN-SUFFIX,cloudflaressl.com
+DOMAIN-SUFFIX,cloudflarestatus.com
+DOMAIN-SUFFIX,cloudflarestorage.com
+DOMAIN-SUFFIX,cloudflarestream.com
+DOMAIN-SUFFIX,cloudflaretest.com
+DOMAIN-SUFFIX,cloudflarewarp.com
+DOMAIN-SUFFIX,cloudflare-ech.com
+DOMAIN-SUFFIX,cloudflare-esni.com
+DOMAIN-SUFFIX,cloudflare-gateway.com
+DOMAIN-SUFFIX,cloudflare-quic.com
+DOMAIN-SUFFIX,trycloudflare.com
+DOMAIN-SUFFIX,argotunnel.com
+DOMAIN-SUFFIX,cfargotunnel.com
+DOMAIN-SUFFIX,cfl.re
+DOMAIN-SUFFIX,every1dns.net
+DOMAIN-SUFFIX,isbgpsafeyet.com
+DOMAIN-SUFFIX,one.one.one
+# Продукты
+DOMAIN-SUFFIX,pages.dev
+DOMAIN-SUFFIX,workers.dev
+DOMAIN-SUFFIX,videodelivery.net
+
+# Официальные подсети Cloudflare (IPv4)
+IP-CIDR,173.245.48.0/20,no-resolve
 IP-CIDR,103.21.244.0/22,no-resolve
 IP-CIDR,103.22.200.0/22,no-resolve
 IP-CIDR,103.31.4.0/22,no-resolve
-IP-CIDR,104.16.0.0/13,no-resolve
-IP-CIDR,104.24.0.0/14,no-resolve
-IP-CIDR,108.162.192.0/18,no-resolve
-IP-CIDR,131.0.72.0/22,no-resolve
 IP-CIDR,141.101.64.0/18,no-resolve
-IP-CIDR,162.158.0.0/15,no-resolve
-IP-CIDR,172.64.0.0/13,no-resolve
-IP-CIDR,173.245.48.0/20,no-resolve
-IP-CIDR,188.114.96.0/20,no-resolve
+IP-CIDR,108.162.192.0/18,no-resolve
 IP-CIDR,190.93.240.0/20,no-resolve
+IP-CIDR,188.114.96.0/20,no-resolve
 IP-CIDR,197.234.240.0/22,no-resolve
 IP-CIDR,198.41.128.0/17,no-resolve
-# подсети IPv6 (официальный список)
+IP-CIDR,162.158.0.0/15,no-resolve
+IP-CIDR,104.16.0.0/13,no-resolve
+IP-CIDR,104.24.0.0/14,no-resolve
+IP-CIDR,172.64.0.0/13,no-resolve
+IP-CIDR,131.0.72.0/22,no-resolve
+# Официальные подсети Cloudflare (IPv6)
 IP-CIDR6,2400:cb00::/32,no-resolve
 IP-CIDR6,2606:4700::/32,no-resolve
 IP-CIDR6,2803:f800::/32,no-resolve
@@ -36,98 +65,200 @@ IP-CIDR6,2405:b500::/32,no-resolve
 IP-CIDR6,2a06:98c0::/29,no-resolve
 IP-CIDR6,2c0f:f248::/32,no-resolve
 
-# --- YOUTUBE (основные домены + API) ---
+################################
+# OPENAI / CHATGPT (без дублей)
+################################
+# Основные зоны
+DOMAIN-SUFFIX,openai.com
+DOMAIN-SUFFIX,chatgpt.com
+DOMAIN-SUFFIX,oaistatic.com
+DOMAIN-SUFFIX,oaiusercontent.com
+# Технические домены, которые реально ломают работу при блокировке
+DOMAIN-SUFFIX,statsigapi.net
+DOMAIN-SUFFIX,statsig.com
+DOMAIN-SUFFIX,featuregates.org
+DOMAIN-SUFFIX,featureassets.org
+DOMAIN-SUFFIX,intercom.io
+DOMAIN-SUFFIX,intercomcdn.com
+DOMAIN,js.stripe.com
+DOMAIN-SUFFIX,browser-intake-datadoghq.com
+DOMAIN-SUFFIX,ingest.sentry.io
+# Примечание: Cloudflare Challenges покрываются секцией Cloudflare (challenges.cloudflare.com)
+
+################################
+# GOOGLE DEEPMIND / GOOGLE AI (Gemini/AI Studio и др.)
+################################
+# DeepMind
+DOMAIN-SUFFIX,deepmind.com
+DOMAIN-SUFFIX,deepmind.google
+# AI Studio / Gemini / Bard / NotebookLM / Jules / Labs
+DOMAIN-SUFFIX,ai.google.dev
+DOMAIN,aistudio.google.com
+DOMAIN,gemini.google.com
+DOMAIN-SUFFIX,gemini.google
+DOMAIN,bard.google.com
+DOMAIN-SUFFIX,notebooklm.google
+DOMAIN,notebooklm.google.com
+DOMAIN-SUFFIX,jules.google
+DOMAIN,jules.google.com
+DOMAIN-SUFFIX,labs.google
+# API
+DOMAIN,generativelanguage.googleapis.com
+DOMAIN,aisandbox-pa.googleapis.com
+# Вспомогательные
+DOMAIN-SUFFIX,clients6.google.com
+
+################################
+# YOUTUBE (видео/статические/CDN/API)
+################################
 DOMAIN-SUFFIX,youtube.com
 DOMAIN-SUFFIX,youtu.be
-DOMAIN-SUFFIX,ytimg.com
 DOMAIN-SUFFIX,googlevideo.com
+DOMAIN-SUFFIX,ytimg.com
+DOMAIN,youtubei.googleapis.com
 DOMAIN-SUFFIX,youtube.googleapis.com
-DOMAIN-SUFFIX,youtubei.googleapis.com
 DOMAIN-SUFFIX,youtube-nocookie.com
 
-# --- TORRENTS/TRACKERS (точечные домены по запросу) ---
-DOMAIN-SUFFIX,rutracker.org
-DOMAIN-SUFFIX,nnmclub.to
-DOMAIN-SUFFIX,rutor.is
-DOMAIN-SUFFIX,kinozal.tv
+################################
+# X (TWITTER)
+################################
+DOMAIN-SUFFIX,x.com
+DOMAIN-SUFFIX,twitter.com
+DOMAIN-SUFFIX,twimg.com
+DOMAIN-SUFFIX,t.co
+DOMAIN-SUFFIX,twitteroauth.com
+DOMAIN-SUFFIX,twitterinc.com
+DOMAIN-SUFFIX,twitterstat.us
+DOMAIN-SUFFIX,twtrdns.net
+DOMAIN-SUFFIX,twttr.net
+DOMAIN-SUFFIX,twvid.com
+DOMAIN,tweetdeck.com
+DOMAIN,periscope.tv
+DOMAIN,pscp.tv
+DOMAIN,twitpic.com
+DOMAIN,tellapart.com
+DOMAIN,twitter.map.fastly.net
 
-# --- PROTON MAIL (актуальные домены) ---
+################################
+# TWITCH (ядро + точные CloudFront)
+################################
+DOMAIN-SUFFIX,twitch.tv
+DOMAIN-SUFFIX,ttvnw.net
+DOMAIN-SUFFIX,jtvnw.net
+DOMAIN-SUFFIX,twitchcdn.net
+DOMAIN-SUFFIX,twitchsvc.net
+DOMAIN-SUFFIX,ext-twitch.tv
+DOMAIN-SUFFIX,live-video.net
+# CloudFront-хосты (точные домены)
+DOMAIN,d1g1f25tn8m2e6.cloudfront.net
+DOMAIN,d1m7jfoe9zdc1j.cloudfront.net
+DOMAIN,d1mhjrowxxagfy.cloudfront.net
+DOMAIN,d1oca24q5dwo6d.cloudfront.net
+DOMAIN,d1w2poirtb3as9.cloudfront.net
+DOMAIN,d1xhnb4ptk05mw.cloudfront.net
+DOMAIN,d1ymi26ma8va5x.cloudfront.net
+DOMAIN,d2aba1wr3818hz.cloudfront.net
+DOMAIN,d2dylwb3shzel1.cloudfront.net
+DOMAIN,d2e2de1etea730.cloudfront.net
+DOMAIN,d2nvs31859zcd8.cloudfront.net
+DOMAIN,d2um2qdswy1tb0.cloudfront.net
+DOMAIN,d2vjef5jvl6bfs.cloudfront.net
+DOMAIN,d2xmjdvx03ij56.cloudfront.net
+DOMAIN,d36nr0u3xmc4mm.cloudfront.net
+DOMAIN,d3aqoihi2n8ty8.cloudfront.net
+DOMAIN,d3c27h4odz752x.cloudfront.net
+DOMAIN,d3vd9lfkzbru3h.cloudfront.net
+DOMAIN,d6d4ismr40iw.cloudfront.net
+DOMAIN,d6tizftlrpuof.cloudfront.net
+DOMAIN,ddacn6pr5v0tl.cloudfront.net
+DOMAIN,dgeft87wbj63p.cloudfront.net
+DOMAIN,dqrpb9wgowsf5.cloudfront.net
+DOMAIN,ds0h3roq6wcgc.cloudfront.net
+DOMAIN,dykkng5hnh52u.cloudfront.net
+
+################################
+# META (Facebook/Instagram/WhatsApp/Threads/Messenger/Workplace/Oculus)
+################################
+# Facebook (ядро + CDN/шортлинки)
+DOMAIN-SUFFIX,facebook.com
+DOMAIN-SUFFIX,fb.com
+DOMAIN-SUFFIX,fb.me
+DOMAIN-SUFFIX,fbcdn.net
+DOMAIN-SUFFIX,fbsbx.com
+DOMAIN-SUFFIX,messenger.com
+DOMAIN-SUFFIX,m.me
+DOMAIN-SUFFIX,workplace.com
+DOMAIN-SUFFIX,meta.com
+DOMAIN-SUFFIX,oculus.com
+# Instagram/Threads
+DOMAIN-SUFFIX,instagram.com
+DOMAIN-SUFFIX,cdninstagram.com
+DOMAIN-SUFFIX,igcdn.com
+DOMAIN-SUFFIX,threads.net
+# WhatsApp
+DOMAIN-SUFFIX,whatsapp.com
+DOMAIN-SUFFIX,whatsapp.net
+# Доп. служебные/наследие
+DOMAIN-SUFFIX,accountkit.com
+DOMAIN,graph.facebook.com
+DOMAIN,api.facebook.com
+DOMAIN,edge-mqtt.facebook.com
+DOMAIN,mqtt.c10r.facebook.com
+DOMAIN,star.c10r.facebook.com
+# Примечание: список компактный, покрывает основные приложения/веб и CDN
+
+################################
+# SPOTIFY
+################################
+DOMAIN-SUFFIX,spotify.com
+DOMAIN-SUFFIX,scdn.co
+DOMAIN-SUFFIX,spotifycdn.com
+
+################################
+# PORNHUB
+################################
+DOMAIN-SUFFIX,pornhub.com
+DOMAIN-SUFFIX,phncdn.com
+
+################################
+# BING / AZURE (для совместимости с OpenAI-ассетами на Azure)
+################################
+DOMAIN-SUFFIX,bing.com
+DOMAIN-SUFFIX,bingapis.com
+DOMAIN-SUFFIX,azurefd.net
+DOMAIN-SUFFIX,azureedge.net
+DOMAIN-SUFFIX,blob.core.windows.net
+
+################################
+# PROTON (Mail)
+################################
 DOMAIN-SUFFIX,proton.me
 DOMAIN-SUFFIX,protonmail.com
 DOMAIN-SUFFIX,protonmail.ch
 DOMAIN-SUFFIX,pm.me
 
-# --- TWITCH (видеопоток + CDN) ---
-DOMAIN-SUFFIX,twitch.tv
-DOMAIN-SUFFIX,ttvnw.net
-DOMAIN-SUFFIX,jtvnw.net
-DOMAIN-SUFFIX,twitchcdn.net
-DOMAIN-SUFFIX,ext-twitch.tv
+################################
+# TIDAL
+################################
+DOMAIN-SUFFIX,tidal.com
+DOMAIN-SUFFIX,tidalhi.fi
 
-# --- OPENAI / CHATGPT ---
-DOMAIN-SUFFIX,openai.com
-DOMAIN-SUFFIX,chatgpt.com
-DOMAIN-SUFFIX,oaiusercontent.com
-DOMAIN-SUFFIX,oaistatic.com
-DOMAIN-SUFFIX,livekit.cloud
+################################
+# GROK (xAI)
+################################
+DOMAIN-SUFFIX,grok.com
+DOMAIN-SUFFIX,x.ai
 
-# --- SPOTIFY (основной сайт + CDN) ---
-DOMAIN-SUFFIX,spotify.com
-DOMAIN-SUFFIX,scdn.co
-DOMAIN-SUFFIX,spotifycdn.com
-DOMAIN-SUFFIX,spotifycdn.net
-DOMAIN-SUFFIX,pscdn.co
-DOMAIN-SUFFIX,spotilocal.com
-DOMAIN-SUFFIX,tospotify.com
-
-# --- PORNHUB (сайт + CDN) ---
-DOMAIN-SUFFIX,pornhub.com
-DOMAIN-SUFFIX,phncdn.com
-DOMAIN-SUFFIX,pornhubpremium.com
-
-# --- GOOGLE DEEPMIND ---
-DOMAIN-SUFFIX,deepmind.com
-DOMAIN-SUFFIX,deepmind.google
-
-# --- BING (поиск + API) ---
-DOMAIN-SUFFIX,bing.com
-DOMAIN-SUFFIX,bingapis.com
-
-# --- AZURE (основные домены сервисов) ---
-DOMAIN-SUFFIX,azureedge.net
-DOMAIN-SUFFIX,azurefd.net
-DOMAIN-SUFFIX,azurewebsites.net
-DOMAIN-SUFFIX,azurestaticapps.net
-DOMAIN-SUFFIX,azure-api.net
-DOMAIN-SUFFIX,trafficmanager.net
-DOMAIN-SUFFIX,cloudapp.net
-DOMAIN-SUFFIX,core.windows.net
-
-# --- META (Facebook/Instagram/WhatsApp/Threads) ---
-DOMAIN-SUFFIX,facebook.com
-DOMAIN-SUFFIX,fb.com
-DOMAIN-SUFFIX,fb.me
-DOMAIN-SUFFIX,m.me
-DOMAIN-SUFFIX,fbcdn.net
-DOMAIN-SUFFIX,fbsbx.com
-DOMAIN-SUFFIX,instagram.com
-DOMAIN-SUFFIX,cdninstagram.com
-DOMAIN-SUFFIX,threads.net
-DOMAIN-SUFFIX,whatsapp.com
-DOMAIN-SUFFIX,whatsapp.net
-DOMAIN-SUFFIX,oculus.com
-DOMAIN-SUFFIX,meta.com
-
-# --- 2IP / BROWSERLEAKS (проверка IP и утечек) ---
+################################
+# Диагностика/проверка IP
+################################
 DOMAIN-SUFFIX,2ip.io
 DOMAIN-SUFFIX,browserleaks.com
 
-# --- GROK (xAI) ---
-DOMAIN-SUFFIX,x.ai
-DOMAIN-SUFFIX,grok.com
-
-# --- TWITTER / X ---
-DOMAIN-SUFFIX,x.com
-DOMAIN-SUFFIX,twitter.com
-DOMAIN-SUFFIX,twimg.com
-DOMAIN-SUFFIX,t.co
+################################
+# Трекеры/торренты (точечные домены)
+################################
+DOMAIN-SUFFIX,rutracker.org
+DOMAIN-SUFFIX,nnmclub.to
+DOMAIN-SUFFIX,rutor.is
+DOMAIN-SUFFIX,kinozal.tv
