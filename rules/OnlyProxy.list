@@ -209,12 +209,6 @@ DOMAIN-SUFFIX,whatsapp.tv
 DOMAIN-SUFFIX,whatsappbrand.com
 # Доп. служебные/наследие
 DOMAIN-SUFFIX,accountkit.com
-DOMAIN,graph.facebook.com
-DOMAIN,api.facebook.com
-DOMAIN,edge-mqtt.facebook.com
-DOMAIN,mqtt.c10r.facebook.com
-DOMAIN,star.c10r.facebook.com
-# Примечание: список компактный, покрывает основные приложения/веб и CDN
 
 ################################
 # SPOTIFY
@@ -280,11 +274,12 @@ DOMAIN-SUFFIX,2ip.io
 DOMAIN-SUFFIX,browserleaks.com
 
 ################################
-# Трекеры/торренты (точечные домены)
+# Трекеры/торренты/прочее (точечные домены)
 ################################
 DOMAIN-SUFFIX,rutracker.org
 DOMAIN-SUFFIX,nnmclub.to
 DOMAIN-SUFFIX,rutor.is
+DOMAIN-SUFFIX,rutor.info
 DOMAIN-SUFFIX,kinozal.tv
 DOMAIN-SUFFIX,news.google.com
 DOMAIN-SUFFIX,microsoft.com
