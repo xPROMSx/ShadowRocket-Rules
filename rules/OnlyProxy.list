@@ -186,6 +186,7 @@ DOMAIN,dykkng5hnh52u.cloudfront.net
 # META (Facebook/Instagram/WhatsApp/Threads/Messenger/Workplace/Oculus)
 ################################
 # Facebook (ядро + CDN/шортлинки)
+DOMAIN-KEYWORD,facebook
 DOMAIN-SUFFIX,facebook.com
 DOMAIN-SUFFIX,fb.com
 DOMAIN-SUFFIX,fb.me
@@ -202,7 +203,7 @@ DOMAIN-SUFFIX,cdninstagram.com
 DOMAIN-SUFFIX,igcdn.com
 DOMAIN-SUFFIX,threads.net
 # WhatsApp
-DOMAIN-KEYWORD,whatsapp.com
+DOMAIN-KEYWORD,whatsapp
 DOMAIN-SUFFIX,whatsapp.com
 DOMAIN-SUFFIX,whatsapp.net
 DOMAIN-SUFFIX,wa.me
