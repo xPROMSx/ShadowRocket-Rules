@@ -4,6 +4,47 @@
 # UPDATED: 2025-09-26
 
 ################################
+################################
+# --- EXPERIMENTAL ::: Telegram @ Whatsapp Calls: только UDP к DC через прокси ---
+################################
+# 0) Широкий перехват UDP-портов
+AND,((PROTOCOL,UDP),(DST-PORT,3000-5000))
+
+# 1) Telegram: точечный перехват звонков (UDP к собственным подсетям DC)
+AND,((IP-CIDR,149.154.160.0/20,no-resolve),(PROTOCOL,UDP))
+AND,((IP-CIDR,91.108.4.0/22,no-resolve),(PROTOCOL,UDP))
+AND,((IP-CIDR,91.108.8.0/22,no-resolve),(PROTOCOL,UDP))
+AND,((IP-CIDR,91.108.12.0/22,no-resolve),(PROTOCOL,UDP))
+AND,((IP-CIDR,91.108.16.0/22,no-resolve),(PROTOCOL,UDP))
+AND,((IP-CIDR,91.108.20.0/22,no-resolve),(PROTOCOL,UDP))
+AND,((IP-CIDR,91.108.56.0/22,no-resolve),(PROTOCOL,UDP))
+AND,((IP-CIDR,91.105.192.0/23,no-resolve),(PROTOCOL,UDP))
+AND,((IP-CIDR,185.76.151.0/24,no-resolve),(PROTOCOL,UDP))
+AND,((IP-CIDR,109.239.140.0/24,no-resolve),(PROTOCOL,UDP))
+# (опц., IPv6 в резерве)
+# AND,((IP-CIDR6,2001:b28:f23d::/48,no-resolve),(PROTOCOL,UDP))
+# AND,((IP-CIDR6,2001:b28:f23f::/48,no-resolve),(PROTOCOL,UDP))
+# AND,((IP-CIDR6,2001:b28:f23c::/48,no-resolve),(PROTOCOL,UDP))
+# AND,((IP-CIDR6,2001:67c:4e8::/48,no-resolve),(PROTOCOL,UDP))
+# AND,((IP-CIDR6,2a0a:f280::/32,no-resolve),(PROTOCOL,UDP))
+
+# 2) Telegram: подстраховка по ASN (только UDP)
+AND,((IP-ASN,62041),(PROTOCOL,UDP))
+AND,((IP-ASN,62014),(PROTOCOL,UDP))
+AND,((IP-ASN,59930),(PROTOCOL,UDP))
+AND,((IP-ASN,211157),(PROTOCOL,UDP))
+AND,((IP-ASN,44907),(PROTOCOL,UDP))
+
+# 3) WhatsApp/Meta: сигнальная часть звонков (STUN/TURN) по ключевым именам
+DOMAIN-KEYWORD,edge-stun
+DOMAIN-KEYWORD,turn-msgr
+DOMAIN-KEYWORD,edgeray
+DOMAIN-KEYWORD,turnservice
+
+# 4) Meta (ASN)
+IP-ASN,32934
+
+################################
 # CLOUDFLARE (домены + официальные подсети)
 ################################
 # Общие продукты/службы
@@ -302,22 +343,6 @@ DOMAIN-SUFFIX,webtest.net
 ################################
 DOMAIN-SUFFIX,2ip.io
 DOMAIN-SUFFIX,browserleaks.com
-
-################################
-################################
-# --- EXPERIMENTAL ::: Telegram Calls: только UDP к DC через прокси ---
-################################
-AND,((PROTOCOL,UDP),(DEST-PORT,3000-5000))
-AND,((IP-CIDR,149.154.160.0/20,no-resolve),(PROTOCOL,UDP))
-AND,((IP-CIDR,91.108.4.0/22,no-resolve),(PROTOCOL,UDP))
-AND,((IP-CIDR,91.108.8.0/22,no-resolve),(PROTOCOL,UDP))
-AND,((IP-CIDR,91.108.12.0/22,no-resolve),(PROTOCOL,UDP))
-AND,((IP-CIDR,91.108.16.0/22,no-resolve),(PROTOCOL,UDP))
-AND,((IP-CIDR,91.108.20.0/22,no-resolve),(PROTOCOL,UDP))
-AND,((IP-CIDR,91.108.56.0/22,no-resolve),(PROTOCOL,UDP))
-AND,((IP-CIDR,91.105.192.0/23,no-resolve),(PROTOCOL,UDP))
-AND,((IP-CIDR,185.76.151.0/24,no-resolve),(PROTOCOL,UDP))
-
 
 ################################
 # Трекеры/торренты/прочее (точечные домены)
