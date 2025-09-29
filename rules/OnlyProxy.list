@@ -350,17 +350,15 @@ DOMAIN-SUFFIX,discordapp.net
 DOMAIN-SUFFIX,dis.gd
 # Статус
 DOMAIN-SUFFIX,discordstatus.com
-
 # Критически важные узлы
 DOMAIN,gateway.discord.gg
 DOMAIN-SUFFIX,discord.media
-
 # (опц.) Точные CDN/медиа-хосты, если хочешь адресно
 DOMAIN,cdn.discordapp.com
 DOMAIN,media.discordapp.net
-
 # Подсети Discord для голосовых серверов (RTP/UDP)
 IP-CIDR,66.22.192.0/18,no-resolve
+
 ################################
 # Диагностика/проверка IP
 ################################
