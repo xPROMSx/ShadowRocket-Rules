@@ -172,7 +172,8 @@ DOMAIN-SUFFIX,youtube-ui.l.google.com
 DOMAIN-SUFFIX,youtubeembeddedplayer.googleapis.com
 DOMAIN-SUFFIX,yt-video-upload.l.google.com
 DOMAIN-SUFFIX,wide-youtube.l.google.com
-DOMAIN,yt3.googleusercontent.com
+#DOMAIN,yt3.googleusercontent.com
+DOMAIN-SUFFIX,googleusercontent.com
 DOMAIN,yt.be
 DOMAIN-SUFFIX,youtubekids.com
 DOMAIN-KEYWORD,youtube
