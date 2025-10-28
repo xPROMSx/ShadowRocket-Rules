@@ -1,7 +1,7 @@
 # NAME: category-proxy-ai-media
 # DESC: сервисы, которые должны идти через PROXY (AI, видео, соцсети, диагностика, Cloudflare)
 # AUTHOR: Proms
-# UPDATED: 2025-09-26
+# UPDATED: 2025-10-28
 
 ################################
 ################################
@@ -22,6 +22,7 @@ AND,((IP-CIDR,91.108.56.0/22,no-resolve),(PROTOCOL,UDP))
 AND,((IP-CIDR,91.105.192.0/23,no-resolve),(PROTOCOL,UDP))
 AND,((IP-CIDR,185.76.151.0/24,no-resolve),(PROTOCOL,UDP))
 AND,((IP-CIDR,109.239.140.0/24,no-resolve),(PROTOCOL,UDP))
+AND,((IP-CIDR,95.161.64.0/20,no-resolve),(PROTOCOL,UDP))
 # (опц., IPv6 в резерве)
 # AND,((IP-CIDR6,2001:b28:f23d::/48,no-resolve),(PROTOCOL,UDP))
 # AND,((IP-CIDR6,2001:b28:f23f::/48,no-resolve),(PROTOCOL,UDP))
@@ -44,6 +45,7 @@ DOMAIN-KEYWORD,turnservice
 
 # 4) Meta (ASN)
 IP-ASN,32934
+IP-CIDR6,2a03:2880::/32,no-resolve
 
 ################################
 # CLOUDFLARE (домены + официальные подсети)
@@ -106,6 +108,7 @@ IP-CIDR6,2803:f800::/32,no-resolve
 IP-CIDR6,2405:b500::/32,no-resolve
 IP-CIDR6,2a06:98c0::/29,no-resolve
 IP-CIDR6,2c0f:f248::/32,no-resolve
+IP-CIDR6,2405:8100::/32,no-resolve
 
 ################################
 # OPENAI / CHATGPT (без дублей)
@@ -125,6 +128,9 @@ DOMAIN-SUFFIX,intercomcdn.com
 DOMAIN,js.stripe.com
 DOMAIN-SUFFIX,browser-intake-datadoghq.com
 DOMAIN-SUFFIX,ingest.sentry.io
+DOMAIN-SUFFIX,auth0.com
+DOMAIN-SUFFIX,hcaptcha.com
+DOMAIN-SUFFIX,livekit.cloud
 # Примечание: Cloudflare Challenges покрываются секцией Cloudflare (challenges.cloudflare.com)
 
 ################################
@@ -321,6 +327,7 @@ DOMAIN-SUFFIX,pm.me
 ################################
 DOMAIN-SUFFIX,tidal.com
 DOMAIN-SUFFIX,tidalhi.fi
+DOMAIN-SUFFIX,tidalhifi.com
 
 ################################
 # GROK (xAI)
