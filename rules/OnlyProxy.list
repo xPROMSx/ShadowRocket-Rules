@@ -77,7 +77,7 @@ DOMAIN-SUFFIX,cfargotunnel.com
 DOMAIN-SUFFIX,cfl.re
 DOMAIN-SUFFIX,every1dns.net
 DOMAIN-SUFFIX,isbgpsafeyet.com
-DOMAIN-SUFFIX,one.one.one
+DOMAIN-SUFFIX,one.one.one.one
 # Продукты
 DOMAIN-SUFFIX,pages.dev
 DOMAIN-SUFFIX,workers.dev
@@ -166,6 +166,10 @@ DOMAIN-SUFFIX,youtube-ui.l.google.com
 DOMAIN-SUFFIX,youtubeembeddedplayer.googleapis.com
 DOMAIN-SUFFIX,yt-video-upload.l.google.com
 DOMAIN-SUFFIX,wide-youtube.l.google.com
+DOMAIN,yt3.googleusercontent.com
+DOMAIN,yt.be
+DOMAIN-SUFFIX,youtubekids.com
+DOMAIN-KEYWORD,youtube
 
 ################################
 # X (TWITTER)
