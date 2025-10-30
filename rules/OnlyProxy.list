@@ -8,8 +8,8 @@
 # --- EXPERIMENTAL ::: Telegram @ Whatsapp Calls: только UDP к DC через прокси ---
 ################################
 # 0) Широкий перехват UDP-портов
-AND,((PROTOCOL,UDP),(DST-PORT,3000-5000))
-AND,((PROTOCOL,UDP),(DST-PORT,50000-65535))
+# AND,((PROTOCOL,UDP),(DST-PORT,3000-5000))
+# AND,((PROTOCOL,UDP),(DST-PORT,50000-65535))
 
 # 1) Telegram: точечный перехват звонков (UDP к собственным подсетям DC)
 AND,((IP-CIDR,149.154.160.0/20,no-resolve),(PROTOCOL,UDP))
@@ -45,7 +45,7 @@ DOMAIN-KEYWORD,turnservice
 
 # 4) Meta (ASN)
 IP-ASN,32934
-IP-CIDR6,2a03:2880::/32,no-resolve
+# IP-CIDR6,2a03:2880::/32,no-resolve
 
 ################################
 # CLOUDFLARE (домены + официальные подсети)
@@ -102,13 +102,13 @@ IP-CIDR,104.24.0.0/14,no-resolve
 IP-CIDR,172.64.0.0/13,no-resolve
 IP-CIDR,131.0.72.0/22,no-resolve
 # Официальные подсети Cloudflare (IPv6)
-IP-CIDR6,2400:cb00::/32,no-resolve
-IP-CIDR6,2606:4700::/32,no-resolve
-IP-CIDR6,2803:f800::/32,no-resolve
-IP-CIDR6,2405:b500::/32,no-resolve
-IP-CIDR6,2a06:98c0::/29,no-resolve
-IP-CIDR6,2c0f:f248::/32,no-resolve
-IP-CIDR6,2405:8100::/32,no-resolve
+# IP-CIDR6,2400:cb00::/32,no-resolve
+# IP-CIDR6,2606:4700::/32,no-resolve
+# IP-CIDR6,2803:f800::/32,no-resolve
+# IP-CIDR6,2405:b500::/32,no-resolve
+# IP-CIDR6,2a06:98c0::/29,no-resolve
+# IP-CIDR6,2c0f:f248::/32,no-resolve
+# IP-CIDR6,2405:8100::/32,no-resolve
 
 ################################
 # OPENAI / CHATGPT (без дублей)
@@ -172,11 +172,15 @@ DOMAIN-SUFFIX,youtube-ui.l.google.com
 DOMAIN-SUFFIX,youtubeembeddedplayer.googleapis.com
 DOMAIN-SUFFIX,yt-video-upload.l.google.com
 DOMAIN-SUFFIX,wide-youtube.l.google.com
-#DOMAIN,yt3.googleusercontent.com
-DOMAIN-SUFFIX,googleusercontent.com
 DOMAIN,yt.be
 DOMAIN-SUFFIX,youtubekids.com
 DOMAIN-KEYWORD,youtube
+DOMAIN,yt3.googleusercontent.com
+DOMAIN,lh3.googleusercontent.com
+DOMAIN,lh4.googleusercontent.com
+DOMAIN,lh5.googleusercontent.com
+DOMAIN,lh6.googleusercontent.com
+# DOMAIN-SUFFIX,googleusercontent.com
 
 ################################
 # X (TWITTER)
