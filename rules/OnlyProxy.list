@@ -131,6 +131,7 @@ DOMAIN-SUFFIX,ingest.sentry.io
 DOMAIN-SUFFIX,auth0.com
 DOMAIN-SUFFIX,hcaptcha.com
 DOMAIN-SUFFIX,livekit.cloud
+DOMAIN-SUFFIX,ct.sendgrid.net
 # Примечание: Cloudflare Challenges покрываются секцией Cloudflare (challenges.cloudflare.com)
 
 ################################
