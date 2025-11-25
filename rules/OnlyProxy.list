@@ -401,7 +401,10 @@ DOMAIN-SUFFIX,microsoft.com
 DOMAIN,facetime.apple.com
 DOMAIN,facetime-apple-com.we.apple-dns.net
 # 2) Медиа-канал FaceTime (звук/видео RTP, STUN/TURN)
-AND,((IP-CIDR,17.0.0.0/8,no-resolve),(PROTOCOL,UDP))
+# AND,((IP-CIDR,17.0.0.0/8,no-resolve),(PROTOCOL,UDP))
+AND,((IP-CIDR,17.0.0.0/8,no-resolve),(PROTOCOL,UDP),(DST-PORT,3478-3497))
+AND,((IP-CIDR,17.0.0.0/8,no-resolve),(PROTOCOL,UDP),(DST-PORT,16384-16387))
+AND,((IP-CIDR,17.0.0.0/8,no-resolve),(PROTOCOL,UDP),(DST-PORT,16393-16402))
 # 3) Пуш-уведомления Apple (APNs, входящий звонок и уведомления)
 # AND,((IP-CIDR,17.0.0.0/8,no-resolve),(PROTOCOL,TCP),(DST-PORT,5223))
 # AND,((IP-CIDR,17.0.0.0/8,no-resolve),(PROTOCOL,TCP),(DST-PORT,443))
