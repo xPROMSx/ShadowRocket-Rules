@@ -1,11 +1,13 @@
 # NAME: category-ru
-# DESC: Сводный список RU-доменов для RULE-SET (урезан, без дублей)
+# DESC: Сводный список RU-доменов для RULE-SET
 # AUTHOR: Proms
-# UPDATED: 2025-08-21
+# UPDATED: 2026-02-10
 
-# --- Российские TLD ---
+# --- Российские TLD 
 DOMAIN-SUFFIX,ru
 DOMAIN-SUFFIX,su
+DOMAIN-SUFFIX,moscow
+DOMAIN-SUFFIX,tatar
 DOMAIN-SUFFIX,xn--80adxhks
 DOMAIN-SUFFIX,xn--80asehdb
 DOMAIN-SUFFIX,xn--80aswg
@@ -14,23 +16,48 @@ DOMAIN-SUFFIX,xn--d1acj3b
 DOMAIN-SUFFIX,xn--p1acf
 DOMAIN-SUFFIX,xn--p1ai
 
-# --- Mail.ru / CDN ---
-DOMAIN-SUFFIX,mail.ru
-DOMAIN-SUFFIX,imgsmail.ru
-DOMAIN-SUFFIX,mycdn.me
+# --- Доп. зоны из category-ru ---
+DOMAIN-SUFFIX,ru.com
+DOMAIN-SUFFIX,ru.net
 
-# --- Ozon ---
-DOMAIN-SUFFIX,ozon.ru
-DOMAIN-SUFFIX,ozone.ru
+# --- Гос. / региональные 
+DOMAIN-SUFFIX,psk
+
+# --- Электронная коммерция 
 DOMAIN-SUFFIX,ozonusercontent.com
+DOMAIN-SUFFIX,paywb.com
 
-# --- VK и связанные ---
+# --- Развлечения 
+DOMAIN-SUFFIX,okko.sport
+DOMAIN-SUFFIX,okko.tv
+DOMAIN-SUFFIX,ngenix.net
+DOMAIN-SUFFIX,restream-media.net
+
+# --- Розница
+DOMAIN-SUFFIX,fix-price.com
+DOMAIN-SUFFIX,lenta.com
+DOMAIN-SUFFIX,lenta.tech
+
+# --- Транспорт 
+DOMAIN-SUFFIX,avs.io
+DOMAIN-SUFFIX,aviasales.com
+DOMAIN-SUFFIX,mosmetro.tech
+
+# --- Avito 
+DOMAIN-SUFFIX,avito.st
+
+# --- Mail.ru Group 
+DOMAIN-SUFFIX,boosty.to
+DOMAIN-SUFFIX,donationalerts.com
+DOMAIN-SUFFIX,memealerts.com
+DOMAIN-SUFFIX,mycdn.me
+DOMAIN-SUFFIX,tamtam.chat
+
+# --- VK 
 DOMAIN-SUFFIX,mradx.net
 DOMAIN-SUFFIX,mvk.com
 DOMAIN-SUFFIX,userapi.com
-DOMAIN-SUFFIX,vk-analytics.ru
 DOMAIN-SUFFIX,vk-apps.com
-DOMAIN-SUFFIX,vk-apps.ru
 DOMAIN-SUFFIX,vk-cdn.me
 DOMAIN-SUFFIX,vk-cdn.net
 DOMAIN-SUFFIX,vk-portal.net
@@ -40,34 +67,55 @@ DOMAIN-SUFFIX,vk.company
 DOMAIN-SUFFIX,vk.design
 DOMAIN-SUFFIX,vk.link
 DOMAIN-SUFFIX,vk.me
-DOMAIN-SUFFIX,vk.ru
 DOMAIN-SUFFIX,vk.team
 DOMAIN-SUFFIX,vkcache.com
 DOMAIN-SUFFIX,vkgo.app
 DOMAIN-SUFFIX,vklive.app
 DOMAIN-SUFFIX,vkmessenger.app
 DOMAIN-SUFFIX,vkmessenger.com
-DOMAIN-SUFFIX,vkontakte.ru
 DOMAIN-SUFFIX,vkuser.net
 DOMAIN-SUFFIX,vkuseraudio.com
 DOMAIN-SUFFIX,vkuseraudio.net
-DOMAIN-SUFFIX,vkuseraudio.ru
-DOMAIN-SUFFIX,vkusercdn.ru
 DOMAIN-SUFFIX,vkuserlive.net
-DOMAIN-SUFFIX,vkuserphoto.ru
 DOMAIN-SUFFIX,vkuservideo.com
 DOMAIN-SUFFIX,vkuservideo.net
-DOMAIN-SUFFIX,vkuservideo.ru
-DOMAIN-SUFFIX,vkvideo.ru
 
-# --- Одноклассники ---
-DOMAIN-SUFFIX,ok.ru
+# --- X5 
+DOMAIN-SUFFIX,5post.market
+DOMAIN-SUFFIX,chizhik.club
+DOMAIN-SUFFIX,okolo.app
+DOMAIN-SUFFIX,perekrestok.com
+DOMAIN-SUFFIX,x5.ai
+DOMAIN-SUFFIX,x5.com
+DOMAIN-SUFFIX,x5.digital
+DOMAIN-SUFFIX,x5.group
+DOMAIN-SUFFIX,x5.media
+DOMAIN-SUFFIX,x5.team
+DOMAIN-SUFFIX,x5.tech
+DOMAIN-SUFFIX,x5static.net
 
-# --- Яндекс (сжатие через KEYWORD) ---
+# --- Yandex 
 DOMAIN-KEYWORD,yandex
-DOMAIN-SUFFIX,ya.ru
-DOMAIN-SUFFIX,yastatic.net
-DOMAIN-SUFFIX,dzen.ru
+DOMAIN-SUFFIX,naydex.net
 DOMAIN-SUFFIX,rostaxi.org
-# Переадрес «яндекс.рф»
-DOMAIN-SUFFIX,xn--d1acpjx3f.xn--p1ai
+DOMAIN-SUFFIX,turbopages.org
+DOMAIN-SUFFIX,webvisor.com
+DOMAIN-SUFFIX,webvisor.org
+DOMAIN-SUFFIX,yads.tech
+DOMAIN-SUFFIX,yastat.net
+DOMAIN-SUFFIX,yastatic.net
+
+# --- Dodo Pizza 
+DOMAIN-SUFFIX,dodopizza.com
+DOMAIN-SUFFIX,dodostatic.net
+DOMAIN-SUFFIX,dodois.com
+DOMAIN-SUFFIX,dodois.io
+
+# --- Rostics
+DOMAIN-SUFFIX,uni.rest
+DOMAIN-SUFFIX,unirest.tech
+
+# --- Прочее 
+DOMAIN-SUFFIX,trbcdn.net
+DOMAIN-SUFFIX,tbank-online.com
+DOMAIN-SUFFIX,taxsee.com
