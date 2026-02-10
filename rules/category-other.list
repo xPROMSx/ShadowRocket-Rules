@@ -5,6 +5,9 @@
 
 # APPLE CORE
 AND,((IP-CIDR,17.0.0.0/8,no-resolve),(PROTOCOL,TCP))
+DOMAIN-SUFFIX,icloud.com
+DOMAIN-SUFFIX,icloud-content.com
+DOMAIN-SUFFIX,itunes.com
 #DOMAIN-SUFFIX,apple.com
 #DOMAIN-SUFFIX,mzstatic.com
 #DOMAIN-SUFFIX,aaplimg.com
@@ -12,9 +15,6 @@ AND,((IP-CIDR,17.0.0.0/8,no-resolve),(PROTOCOL,TCP))
 #DOMAIN-SUFFIX,apple-mapkit.com
 #DOMAIN-SUFFIX,apple-cloudkit.com
 #DOMAIN-SUFFIX,apple-livephotoskit.com
-DOMAIN-SUFFIX,icloud.com
-DOMAIN-SUFFIX,icloud-content.com
-DOMAIN-SUFFIX,itunes.com
 #DOMAIN-SUFFIX,me.com
 #IP-CIDR,17.0.0.0/8,no-resolve
 #IP-CIDR6,2403:300::/32,no-resolve
