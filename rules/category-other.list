@@ -4,33 +4,33 @@
 # UPDATED: 2025-08-21
 
 # APPLE CORE
-DOMAIN-SUFFIX,apple.com
-DOMAIN-SUFFIX,mzstatic.com
-DOMAIN-SUFFIX,aaplimg.com
-DOMAIN-SUFFIX,cdn-apple.com
-DOMAIN-SUFFIX,apple-mapkit.com
-DOMAIN-SUFFIX,apple-cloudkit.com
-DOMAIN-SUFFIX,apple-livephotoskit.com
+AND,((IP-CIDR,17.0.0.0/8,no-resolve),(PROTOCOL,TCP))
+#DOMAIN-SUFFIX,apple.com
+#DOMAIN-SUFFIX,mzstatic.com
+#DOMAIN-SUFFIX,aaplimg.com
+#DOMAIN-SUFFIX,cdn-apple.com
+#DOMAIN-SUFFIX,apple-mapkit.com
+#DOMAIN-SUFFIX,apple-cloudkit.com
+#DOMAIN-SUFFIX,apple-livephotoskit.com
 DOMAIN-SUFFIX,icloud.com
 DOMAIN-SUFFIX,icloud-content.com
 DOMAIN-SUFFIX,itunes.com
-DOMAIN-SUFFIX,me.com
-IP-CIDR,17.0.0.0/8,no-resolve
-IP-CIDR6,2403:300::/32,no-resolve
-IP-CIDR6,2620:149::/32,no-resolve
-IP-CIDR6,2a01:b740::/32,no-resolve
+#DOMAIN-SUFFIX,me.com
+#IP-CIDR,17.0.0.0/8,no-resolve
+#IP-CIDR6,2403:300::/32,no-resolve
+#IP-CIDR6,2620:149::/32,no-resolve
+#IP-CIDR6,2a01:b740::/32,no-resolve
 
 #GOOGLE CORE
-DOMAIN-SUFFIX,google.com
-DOMAIN-SUFFIX,gstatic.com
-DOMAIN-SUFFIX,googleusercontent.com
-DOMAIN-SUFFIX,recaptcha.net
-DOMAIN-SUFFIX,withgoogle.com
-DOMAIN-SUFFIX,g.co
-DOMAIN-SUFFIX,goo.gl
-DOMAIN-SUFFIX,pki.goog
-DOMAIN-SUFFIX,googleapis.com
-
+#DOMAIN-SUFFIX,google.com
+#DOMAIN-SUFFIX,gstatic.com
+#DOMAIN-SUFFIX,googleusercontent.com
+#DOMAIN-SUFFIX,recaptcha.net
+#DOMAIN-SUFFIX,withgoogle.com
+#DOMAIN-SUFFIX,g.co
+#DOMAIN-SUFFIX,goo.gl
+#DOMAIN-SUFFIX,pki.goog
+#DOMAIN-SUFFIX,googleapis.com
 
 # Others
 DOMAIN-SUFFIX,synology.me
