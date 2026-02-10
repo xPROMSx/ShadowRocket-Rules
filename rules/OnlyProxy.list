@@ -1,11 +1,10 @@
-# # NAME: category-proxy-ai-media
+# # NAME: category-proxy
 # DESC: сервисы, которые должны идти через PROXY (мессенджеры/видео/соцсети/диагностика/Cloudflare)
 # AUTHOR: Proms
 # UPDATED: 2026-02-10
 
 ################################
 # Telegram — ВЕСЬ трафик через прокси (TCP+UDP)
-# Источник подсетей: официальный список Telegram
 ################################
 
 # 1) Telegram: официальные IPv4 подсети (без ограничений по протоколу)
@@ -45,12 +44,31 @@ DOMAIN-SUFFIX,tdesktop.com
 DOMAIN-SUFFIX,cdn-telegram.org
 DOMAIN-SUFFIX,telegram-cdn.org
 
+# 5) Telegram: доп. домены/клиенты/зеркала из актуальных списков
+DOMAIN-SUFFIX,telegram.dog
+DOMAIN-SUFFIX,telegram.space
+DOMAIN-SUFFIX,telegramdownload.com
+DOMAIN-SUFFIX,stel.com
+DOMAIN-SUFFIX,tx.me
+DOMAIN-SUFFIX,tg.dev
+DOMAIN-SUFFIX,telega.one
+DOMAIN-SUFFIX,comments.app
+DOMAIN-SUFFIX,graph.org
+DOMAIN-SUFFIX,usercontent.dev
+DOMAIN-SUFFIX,legra.ph
+DOMAIN-SUFFIX,contest.com
+DOMAIN-SUFFIX,quiz.directory
+DOMAIN-SUFFIX,mbrx.app
+DOMAIN,api.imem.app
+DOMAIN,api.swiftgram.app
+DOMAIN-KEYWORD,nicegram
+
 
 ################################
 # WhatsApp — ВЕСЬ трафик через прокси (TCP+UDP)
 ################################
 
-# 1) WhatsApp: основные домены (обычно этого достаточно и для чатов, и для звонков, и для медиа)
+# 1) WhatsApp: основные домены 
 DOMAIN-SUFFIX,whatsapp.net
 DOMAIN-SUFFIX,whatsapp.com
 DOMAIN-SUFFIX,wa.me
@@ -64,6 +82,7 @@ DOMAIN-KEYWORD,edge-stun
 DOMAIN-KEYWORD,turn-msgr
 DOMAIN-KEYWORD,edgeray
 DOMAIN-KEYWORD,turnservice
+
 
 ################################
 # CLOUDFLARE (домены + официальные подсети)
@@ -98,6 +117,8 @@ DOMAIN-SUFFIX,cfl.re
 DOMAIN-SUFFIX,every1dns.net
 DOMAIN-SUFFIX,isbgpsafeyet.com
 DOMAIN-SUFFIX,one.one.one.one
+DOMAIN,static.cloudflareinsights.com
+
 # Продукты
 DOMAIN-SUFFIX,pages.dev
 DOMAIN-SUFFIX,workers.dev
@@ -128,14 +149,27 @@ IP-CIDR,131.0.72.0/22,no-resolve
 # IP-CIDR6,2c0f:f248::/32,no-resolve
 # IP-CIDR6,2405:8100::/32,no-resolve
 
+
 ################################
-# OPENAI / CHATGPT (без дублей)
+# OPENAI / CHATGPT (без дублей, но с нужными зависимостями)
 ################################
 # Основные зоны
 DOMAIN-SUFFIX,openai.com
 DOMAIN-SUFFIX,chatgpt.com
 DOMAIN-SUFFIX,oaistatic.com
 DOMAIN-SUFFIX,oaiusercontent.com
+
+# частые домены/зависимости из современных списков
+DOMAIN-SUFFIX,ai.com
+DOMAIN-SUFFIX,arkoselabs.com
+DOMAIN-SUFFIX,algolia.net
+DOMAIN-SUFFIX,api.statsig.com
+DOMAIN-SUFFIX,events.statsigapi.net
+DOMAIN-SUFFIX,launchdarkly.com
+DOMAIN-SUFFIX,segment.io
+DOMAIN-SUFFIX,sentry.io
+DOMAIN-SUFFIX,stripe.com
+
 # Технические домены, которые реально ломают работу при блокировке
 DOMAIN-SUFFIX,statsigapi.net
 DOMAIN-SUFFIX,statsig.com
@@ -150,7 +184,7 @@ DOMAIN-SUFFIX,auth0.com
 DOMAIN-SUFFIX,hcaptcha.com
 DOMAIN-SUFFIX,livekit.cloud
 DOMAIN-SUFFIX,ct.sendgrid.net
-# Примечание: Cloudflare Challenges покрываются секцией Cloudflare (challenges.cloudflare.com)
+# Примечание: Cloudflare Challenges покрываются секцией Cloudflare
 
 ################################
 # GOOGLE DEEPMIND / GOOGLE AI (Gemini/AI Studio и др.)
@@ -201,6 +235,15 @@ DOMAIN,lh5.googleusercontent.com
 DOMAIN,lh6.googleusercontent.com
 # DOMAIN-SUFFIX,googleusercontent.com
 
+DOMAIN-SUFFIX,gvt2.com
+DOMAIN-SUFFIX,withyoutube.com
+DOMAIN-SUFFIX,youtubeeducation.com
+DOMAIN-SUFFIX,youtubego.com
+DOMAIN-SUFFIX,youtubegaming.com
+DOMAIN-SUFFIX,youtubemobilesupport.com
+DOMAIN-SUFFIX,video.google.com
+
+
 ################################
 # X (TWITTER)
 ################################
@@ -220,6 +263,14 @@ DOMAIN,pscp.tv
 DOMAIN,twitpic.com
 DOMAIN,tellapart.com
 DOMAIN,twitter.map.fastly.net
+DOMAIN-SUFFIX,twttr.com
+DOMAIN-SUFFIX,vine.co
+DOMAIN-SUFFIX,twittercommunity.com
+DOMAIN-SUFFIX,twitterflightschool.com
+DOMAIN-SUFFIX,twitter.jp
+DOMAIN-SUFFIX,twitter.biz
+DOMAIN-SUFFIX,ads-twitter.com
+DOMAIN-SUFFIX,cms-twdigitalassets.com
 
 ################################
 # TWITCH (ядро + точные CloudFront)
@@ -257,6 +308,7 @@ DOMAIN,dgeft87wbj63p.cloudfront.net
 DOMAIN,dqrpb9wgowsf5.cloudfront.net
 DOMAIN,ds0h3roq6wcgc.cloudfront.net
 DOMAIN,dykkng5hnh52u.cloudfront.net
+
 
 ################################
 # META (Facebook/Instagram/WhatsApp/Threads/Messenger/Workplace/Oculus)
@@ -316,18 +368,32 @@ IP-CIDR,173.252.96.0/19,no-resolve
 IP-CIDR,179.60.192.0/22,no-resolve
 IP-CIDR,185.60.216.0/22,no-resolve
 
+
 ################################
 # SPOTIFY
 ################################
 DOMAIN-SUFFIX,spotify.com
 DOMAIN-SUFFIX,scdn.co
 DOMAIN-SUFFIX,spotifycdn.com
+DOMAIN-SUFFIX,spoti.fi
+DOMAIN-SUFFIX,pscdn.co
+DOMAIN-SUFFIX,spotifycdn.net
+DOMAIN-SUFFIX,spotify.app.link
+DOMAIN-SUFFIX,spotifycharts.com
+DOMAIN-SUFFIX,spotifycodes.com
+DOMAIN-SUFFIX,spotify.design
+DOMAIN-SUFFIX,spotify-everywhere.com
+DOMAIN-SUFFIX,byspotify.com
+DOMAIN-KEYWORD,spotify
 
 ################################
 # PORNHUB
 ################################
 DOMAIN-SUFFIX,pornhub.com
 DOMAIN-SUFFIX,phncdn.com
+DOMAIN-SUFFIX,pornhubpremium.com
+DOMAIN-SUFFIX,pornhub.org
+DOMAIN-SUFFIX,pornhub.net
 
 ################################
 # BING / AZURE (для совместимости с OpenAI-ассетами на Azure)
@@ -345,6 +411,9 @@ DOMAIN-SUFFIX,proton.me
 DOMAIN-SUFFIX,protonmail.com
 DOMAIN-SUFFIX,protonmail.ch
 DOMAIN-SUFFIX,pm.me
+# (добавлено) частые сервисные домены Proton (минимально)
+DOMAIN-SUFFIX,protonvpn.com
+DOMAIN-SUFFIX,protonstatus.com
 
 ################################
 # TIDAL
@@ -373,6 +442,15 @@ DOMAIN-SUFFIX,speedtest.co
 DOMAIN-SUFFIX,speedtest.net
 DOMAIN-SUFFIX,speedtestcustom.com
 DOMAIN-SUFFIX,webtest.net
+DOMAIN-SUFFIX,speed.cloudflare.com
+DOMAIN-SUFFIX,speed.dler.io
+DOMAIN-SUFFIX,openspeedtest.com
+DOMAIN-SUFFIX,cachefly.net
+DOMAIN-SUFFIX,uwn.com
+DOMAIN-KEYWORD,speedtest
+DOMAIN-KEYWORD,speedtestcustom
+DOMAIN-KEYWORD,openspeedtest
+DOMAIN-KEYWORD,wifiman
 
 ################################
 # DISCORD (iOS) — веб, API, веб-сокет, медиа/CDN, голос
@@ -388,9 +466,22 @@ DOMAIN-SUFFIX,discordstatus.com
 # Критически важные узлы
 DOMAIN,gateway.discord.gg
 DOMAIN-SUFFIX,discord.media
-# (опц.) Точные CDN/медиа-хосты, если хочешь адресно
+# (опц.) Точные CDN/медиа-хосты
 DOMAIN,cdn.discordapp.com
 DOMAIN,media.discordapp.net
+DOMAIN-SUFFIX,discordcdn.com
+DOMAIN-SUFFIX,discord.co
+DOMAIN-SUFFIX,discord.gift
+DOMAIN-SUFFIX,discord.gifts
+DOMAIN-SUFFIX,discord.new
+DOMAIN-SUFFIX,discord.store
+DOMAIN-SUFFIX,discord.tools
+DOMAIN-SUFFIX,discord.design
+DOMAIN-SUFFIX,discord.dev
+DOMAIN-SUFFIX,discordapp.io
+DOMAIN-SUFFIX,discordapp.page.link
+DOMAIN-SUFFIX,discordactivities.com
+DOMAIN-SUFFIX,discord-activities.com
 # Подсети Discord для голосовых серверов (RTP/UDP)
 IP-CIDR,66.22.192.0/18,no-resolve
 
@@ -415,7 +506,6 @@ DOMAIN-SUFFIX,microsoft.com
 # APPLE FACETIME (звонки / видео / экран)
 ################################
 # 1) Сигнализация FaceTime (договориться о звонке, handoff, ссылки)
-# Эти домены помечены как основные для FaceTime и указывают на сеть Apple (AS714).
 DOMAIN,facetime.apple.com
 DOMAIN,facetime-apple-com.we.apple-dns.net
 # 2) Медиа-канал FaceTime (звук/видео RTP, STUN/TURN)
