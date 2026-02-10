@@ -1,51 +1,69 @@
-# NAME: category-proxy-ai-media
-# DESC: сервисы, которые должны идти через PROXY (AI, видео, соцсети, диагностика, Cloudflare)
+# # NAME: category-proxy-ai-media
+# DESC: сервисы, которые должны идти через PROXY (мессенджеры/видео/соцсети/диагностика/Cloudflare)
 # AUTHOR: Proms
-# UPDATED: 2025-10-28
+# UPDATED: 2026-02-10
 
 ################################
+# Telegram — ВЕСЬ трафик через прокси (TCP+UDP)
+# Источник подсетей: официальный список Telegram
 ################################
-# --- EXPERIMENTAL ::: Telegram @ Whatsapp Calls: только UDP к DC через прокси ---
+
+# 1) Telegram: официальные IPv4 подсети (без ограничений по протоколу)
+IP-CIDR,149.154.160.0/20,no-resolve
+IP-CIDR,91.105.192.0/23,no-resolve
+IP-CIDR,91.108.4.0/22,no-resolve
+IP-CIDR,91.108.8.0/22,no-resolve
+IP-CIDR,91.108.12.0/22,no-resolve
+IP-CIDR,91.108.16.0/22,no-resolve
+IP-CIDR,91.108.20.0/22,no-resolve
+IP-CIDR,91.108.56.0/22,no-resolve
+IP-CIDR,185.76.151.0/24,no-resolve
+
+# 2) Telegram: официальные IPv6 подсети (включайте, если у вас IPv6 не отключён)
+IP-CIDR6,2001:b28:f23d::/48,no-resolve
+IP-CIDR6,2001:b28:f23f::/48,no-resolve
+IP-CIDR6,2001:b28:f23c::/48,no-resolve
+IP-CIDR6,2001:67c:4e8::/48,no-resolve
+IP-CIDR6,2a0a:f280::/32,no-resolve
+
+# 3) Telegram: подстраховка по ASN (весь трафик, не только UDP)
+# as-set Telegram (RIPE): AS62041, AS62014, AS59930
+IP-ASN,62041
+IP-ASN,62014
+IP-ASN,59930
+# Доп. ASN Telegram, встречаются в маршрутизации/площадках
+IP-ASN,211157
+IP-ASN,44907
+
+# 4) Telegram: домены (страховка на случай CDN/веб-части/предпросмотра ссылок)
+DOMAIN-SUFFIX,telegram.org
+DOMAIN-SUFFIX,t.me
+DOMAIN-SUFFIX,telegram.me
+DOMAIN-SUFFIX,telegra.ph
+DOMAIN-SUFFIX,telesco.pe
+DOMAIN-SUFFIX,tdesktop.com
+DOMAIN-SUFFIX,cdn-telegram.org
+DOMAIN-SUFFIX,telegram-cdn.org
+
+
 ################################
-# 0) Широкий перехват UDP-портов
-# AND,((PROTOCOL,UDP),(DST-PORT,3000-5000))
-# AND,((PROTOCOL,UDP),(DST-PORT,50000-65535))
+# WhatsApp — ВЕСЬ трафик через прокси (TCP+UDP)
+################################
 
-# 1) Telegram: точечный перехват звонков (UDP к собственным подсетям DC)
-AND,((IP-CIDR,149.154.160.0/20,no-resolve),(PROTOCOL,UDP))
-AND,((IP-CIDR,91.108.4.0/22,no-resolve),(PROTOCOL,UDP))
-AND,((IP-CIDR,91.108.8.0/22,no-resolve),(PROTOCOL,UDP))
-AND,((IP-CIDR,91.108.12.0/22,no-resolve),(PROTOCOL,UDP))
-AND,((IP-CIDR,91.108.16.0/22,no-resolve),(PROTOCOL,UDP))
-AND,((IP-CIDR,91.108.20.0/22,no-resolve),(PROTOCOL,UDP))
-AND,((IP-CIDR,91.108.56.0/22,no-resolve),(PROTOCOL,UDP))
-AND,((IP-CIDR,91.105.192.0/23,no-resolve),(PROTOCOL,UDP))
-AND,((IP-CIDR,185.76.151.0/24,no-resolve),(PROTOCOL,UDP))
-AND,((IP-CIDR,109.239.140.0/24,no-resolve),(PROTOCOL,UDP))
-AND,((IP-CIDR,95.161.64.0/20,no-resolve),(PROTOCOL,UDP))
-# (опц., IPv6 в резерве)
-# AND,((IP-CIDR6,2001:b28:f23d::/48,no-resolve),(PROTOCOL,UDP))
-# AND,((IP-CIDR6,2001:b28:f23f::/48,no-resolve),(PROTOCOL,UDP))
-# AND,((IP-CIDR6,2001:b28:f23c::/48,no-resolve),(PROTOCOL,UDP))
-# AND,((IP-CIDR6,2001:67c:4e8::/48,no-resolve),(PROTOCOL,UDP))
-# AND,((IP-CIDR6,2a0a:f280::/32,no-resolve),(PROTOCOL,UDP))
+# 1) WhatsApp: основные домены (обычно этого достаточно и для чатов, и для звонков, и для медиа)
+DOMAIN-SUFFIX,whatsapp.net
+DOMAIN-SUFFIX,whatsapp.com
+DOMAIN-SUFFIX,wa.me
 
-# 2) Telegram: подстраховка по ASN (только UDP)
-AND,((IP-ASN,62041),(PROTOCOL,UDP))
-AND,((IP-ASN,62014),(PROTOCOL,UDP))
-AND,((IP-ASN,59930),(PROTOCOL,UDP))
-AND,((IP-ASN,211157),(PROTOCOL,UDP))
-AND,((IP-ASN,44907),(PROTOCOL,UDP))
+# 2) Meta (на случай если часть инфраструктуры уезжает в общие домены/адреса Meta)
+IP-ASN,32934
+# IP-CIDR6,2a03:2880::/32,no-resolve  # (опционально, если хотите явно захватить IPv6 Meta)
 
-# 3) WhatsApp/Meta: сигнальная часть звонков (STUN/TURN) по ключевым именам
+# 3) Звонки Meta/WhatsApp: сигнальная часть (STUN/TURN) по ключевым словам (как доп. страховка)
 DOMAIN-KEYWORD,edge-stun
 DOMAIN-KEYWORD,turn-msgr
 DOMAIN-KEYWORD,edgeray
 DOMAIN-KEYWORD,turnservice
-
-# 4) Meta (ASN)
-IP-ASN,32934
-# IP-CIDR6,2a03:2880::/32,no-resolve
 
 ################################
 # CLOUDFLARE (домены + официальные подсети)
