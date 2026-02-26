@@ -1,7 +1,7 @@
 # NAME: category-ru
 # DESC: Сводный список RU-доменов для RULE-SET
 # AUTHOR: Proms
-# UPDATED: 2026-02-10
+# UPDATED: 2026-02-26
 
 # --- Российские TLD 
 DOMAIN-SUFFIX,ru
@@ -119,3 +119,20 @@ DOMAIN-SUFFIX,unirest.tech
 DOMAIN-SUFFIX,trbcdn.net
 DOMAIN-SUFFIX,tbank-online.com
 DOMAIN-SUFFIX,taxsee.com
+DOMAIN-SUFFIX,24h.tv
+DOMAIN-SUFFIX,dbo-dengi.online
+DOMAIN-SUFFIX,emias.info
+DOMAIN-SUFFIX,evrasia.rest
+DOMAIN-SUFFIX,kinopoisk-ru.clstorage.net
+DOMAIN-SUFFIX,kinorium.com
+DOMAIN-SUFFIX,moex.com
+DOMAIN-SUFFIX,netmonet.co
+DOMAIN-SUFFIX,premier.one
+DOMAIN-SUFFIX,sberbank.com
+DOMAIN-SUFFIX,sistema-capital.com
+DOMAIN-SUFFIX,smotreshka.tv
+DOMAIN-SUFFIX,t1.cloud
+DOMAIN-SUFFIX,tips.tips
+DOMAIN-SUFFIX,tochka-tech.com
+DOMAIN-SUFFIX,tochka.com
+DOMAIN-SUFFIX,yclients.com
