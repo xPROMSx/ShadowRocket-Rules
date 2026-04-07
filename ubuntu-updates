@@ -27,6 +27,9 @@ HAD_OD1=0
 HAD_OD2=0
 DRYLOG_PATH=""
 SYSTEM_TZ=""
+PRO_ATTACH_ANSWER=""
+PRO_TOKEN=""
+PRO_ATTACHED_NOW=0
 
 COLOR_RED=$'\033[31m'
 COLOR_GREEN=$'\033[32m'
@@ -93,6 +96,7 @@ ensure_packages() {
 
   dpkg -s unattended-upgrades >/dev/null 2>&1 || missing+=(unattended-upgrades)
   dpkg -s python3 >/dev/null 2>&1 || missing+=(python3)
+  dpkg -s ubuntu-advantage-tools >/dev/null 2>&1 || missing+=(ubuntu-advantage-tools)
 
   if ((${#missing[@]} > 0)); then
     msg "Ставлю недостающие пакеты: ${missing[*]}"
@@ -103,6 +107,47 @@ ensure_packages() {
   have apt-config || { fail "Не найдена команда apt-config"; exit 1; }
   have systemctl || { fail "Не найдена команда systemctl"; exit 1; }
   have unattended-upgrade || { fail "Не найдена команда unattended-upgrade"; exit 1; }
+}
+
+maybe_attach_pro() {
+  if ! have pro; then
+    warn "Команда 'pro' не найдена, пропускаю этап Ubuntu Pro attach"
+    return 0
+  fi
+
+  if pro status 2>/dev/null | grep -qi 'This machine is attached'; then
+    ok "Ubuntu Pro уже подключен, пропускаю attach"
+    return 0
+  fi
+
+  echo
+  read -r -p "Хотите прикрепить Ubuntu Pro token сейчас? [y/N]: " PRO_ATTACH_ANSWER || true
+  case "${PRO_ATTACH_ANSWER,,}" in
+    y|yes|д|да)
+      ;;
+    *)
+      msg "Пропускаю Ubuntu Pro attach по выбору пользователя"
+      return 0
+      ;;
+  esac
+
+  echo
+  read -r -s -p "Введите Ubuntu Pro token: " PRO_TOKEN
+  echo
+
+  if [[ -z "$PRO_TOKEN" ]]; then
+    fail "Токен пустой. Останавливаю скрипт по вашему условию."
+    exit 1
+  fi
+
+  msg "Пробую прикрепить Ubuntu Pro token..."
+  if pro attach "$PRO_TOKEN"; then
+    PRO_ATTACHED_NOW=1
+    ok "Ubuntu Pro успешно подключен"
+  else
+    fail "Не удалось выполнить 'pro attach'. Останавливаю скрипт."
+    exit 1
+  fi
 }
 
 backup_files() {
@@ -325,6 +370,7 @@ summary() {
   local next_daily=""
   local next_upgrade=""
   local pro_present="no"
+  local pro_attached="no"
 
   next_daily="$(systemctl show -p NextElapseUSecRealtime --value apt-daily.timer 2>/dev/null || true)"
   next_upgrade="$(systemctl show -p NextElapseUSecRealtime --value apt-daily-upgrade.timer 2>/dev/null || true)"
@@ -415,6 +461,9 @@ summary() {
 
   if have pro; then
     pro_present="yes"
+    if pro status 2>/dev/null | grep -qi 'This machine is attached'; then
+      pro_attached="yes"
+    fi
   fi
 
   echo
@@ -434,8 +483,15 @@ summary() {
   echo "Next apt-daily run         : ${next_daily:-unknown}"
   echo "Next apt-daily-upgrade run : ${next_upgrade:-unknown}"
   echo "Ubuntu Pro client present  : ${pro_present}"
+  echo "Ubuntu Pro attached        : ${pro_attached}"
+  echo "Pro attached in this run   : $( [[ "$PRO_ATTACHED_NOW" -eq 1 ]] && echo yes || echo no )"
   echo "Logs dir                   : /var/log/unattended-upgrades"
   echo "Backups dir                : ${BACKUP_DIR}"
+
+  if [[ "$pro_present" == "yes" && "$pro_attached" == "no" ]]; then
+    [[ "$status" == "OK" ]] && status="WARN"
+    notes+=("Ubuntu Pro client установлен, но машина не attached")
+  fi
 
   echo
   if [[ "$status" == "OK" ]]; then
@@ -474,6 +530,7 @@ main() {
   capture_system_tz
   cleanup_legacy_noise
   ensure_packages
+  maybe_attach_pro
   backup_files
   patch_configs
   apply_timer_overrides
