@@ -1,12 +1,15 @@
-sudo tee /usr/local/sbin/uu-vps-harden >/dev/null <<'BASH'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
 F50=/etc/apt/apt.conf.d/50unattended-upgrades
 F20=/etc/apt/apt.conf.d/20auto-upgrades
+BACKUP_DIR=/root/apt-conf-backups
 STAMP="$(date +%F-%H%M%S)"
-B50="${F50}.bak.${STAMP}"
-B20="${F20}.bak.${STAMP}"
+
+mkdir -p "$BACKUP_DIR"
+
+B50="${BACKUP_DIR}/50unattended-upgrades.${STAMP}.bak"
+B20="${BACKUP_DIR}/20auto-upgrades.${STAMP}.bak"
 
 need() {
   command -v "$1" >/dev/null 2>&1 || { echo "Не найдено: $1" >&2; exit 1; }
@@ -34,15 +37,15 @@ t50 = f50.read_text(encoding="utf-8")
 
 def set_scalar(text: str, key: str, value: str) -> str:
     pat = re.compile(rf'(?m)^[ \t]*(?://\s*)?{re.escape(key)}\s+"[^"\n]*";[ \t]*$')
-    text = pat.sub('', text)
-    text = re.sub(r'\n{3,}', '\n\n', text).rstrip('\n') + '\n'
-    text += f'{key} "{value}";\n'
+    if pat.search(text):
+        text = pat.sub(f'{key} "{value}";', text)
+    else:
+        text = text.rstrip('\n') + f'\n{key} "{value}";\n'
     return text
 
-# Нормализуем Allowed-Origins и включаем -updates
 m = re.search(r'(?ms)(Unattended-Upgrade::Allowed-Origins\s*\{)(.*?)(^\s*\};)', t50)
 if not m:
-    raise SystemExit("Не найден блок Unattended-Upgrade::Allowed-Origins в 50unattended-upgrades")
+    raise SystemExit("Не найден блок Unattended-Upgrade::Allowed-Origins")
 
 head, body, tail = m.group(1), m.group(2), m.group(3)
 
@@ -67,7 +70,6 @@ for key, value in [
 
 f50.write_text(t50, encoding='utf-8')
 
-# 20auto-upgrades: включаем ежедневный запуск
 if f20.exists():
     t20 = f20.read_text(encoding='utf-8')
 else:
@@ -78,16 +80,16 @@ for key, value in [
     ('APT::Periodic::Unattended-Upgrade', '1'),
 ]:
     pat = re.compile(rf'(?m)^[ \t]*(?://\s*)?{re.escape(key)}\s+"[^"\n]*";[ \t]*$')
-    t20 = pat.sub('', t20)
-    t20 = t20.rstrip('\n') + '\n'
-    t20 += f'{key} "{value}";\n'
+    if pat.search(t20):
+        t20 = pat.sub(f'{key} "{value}";', t20)
+    else:
+        t20 = t20.rstrip('\n') + f'\n{key} "{value}";\n'
 
 f20.write_text(t20, encoding='utf-8')
 PY
 
-# Валидируем APT-конфиг
 if ! apt-config dump >/dev/null; then
-  echo "Ошибка синтаксиса APT-конфига. Откатываю изменения..." >&2
+  echo "Ошибка синтаксиса APT-конфига. Откат..." >&2
   cp -af "$B50" "$F50"
   if [[ -f "$B20" ]]; then
     cp -af "$B20" "$F20"
@@ -101,26 +103,13 @@ echo "Синтаксис APT-конфига: OK"
 echo
 
 echo "Тест unattended-upgrade --dry-run..."
-if unattended-upgrade -v --dry-run; then
-  echo
-  echo "Dry-run: OK"
-else
-  echo
-  echo "Dry-run завершился с ошибкой, но конфиг сохранен."
-  echo "Чаще всего это lock APT, временная ошибка репозитория или сеть."
-fi
+unattended-upgrade -v --dry-run || true
+echo
+
+echo "Проверка systemd timers..."
+systemctl is-enabled apt-daily.timer apt-daily-upgrade.timer || true
+systemctl --no-pager --full status apt-daily.timer apt-daily-upgrade.timer | sed -n '1,80p' || true
 
 echo
 echo "Backup 50: $B50"
-if [[ -f "$B20" ]]; then
-  echo "Backup 20: $B20"
-fi
-
-echo
-echo "Итоговые параметры:"
-grep -nE 'Remove-Unused-Kernel-Packages|Remove-New-Unused-Dependencies|Automatic-Reboot|Automatic-Reboot-Time' "$F50" || true
-grep -nE 'APT::Periodic::Update-Package-Lists|APT::Periodic::Unattended-Upgrade' "$F20" || true
-grep -n '\${distro_id}:\${distro_codename}-updates' "$F50" || true
-BASH
-
-sudo chmod 0755 /usr/local/sbin/uu-vps-harden
+echo "Backup 20: $B20"
