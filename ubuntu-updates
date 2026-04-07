@@ -1,48 +1,109 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-F50=/etc/apt/apt.conf.d/50unattended-upgrades
-F20=/etc/apt/apt.conf.d/20auto-upgrades
-BACKUP_DIR=/root/apt-conf-backups
-STAMP="$(date +%F-%H%M%S)"
+export DEBIAN_FRONTEND=noninteractive
 
-mkdir -p "$BACKUP_DIR"
+F50="/etc/apt/apt.conf.d/50unattended-upgrades"
+F20="/etc/apt/apt.conf.d/20auto-upgrades"
+BACKUP_DIR="/root/apt-conf-backups"
+STAMP="$(date +%F-%H%M%S)"
 
 B50="${BACKUP_DIR}/50unattended-upgrades.${STAMP}.bak"
 B20="${BACKUP_DIR}/20auto-upgrades.${STAMP}.bak"
 
-need() {
-  command -v "$1" >/dev/null 2>&1 || { echo "Не найдено: $1" >&2; exit 1; }
+AUTO_REBOOT_TIME="04:22"
+
+COLOR_RED=$'\033[31m'
+COLOR_GREEN=$'\033[32m'
+COLOR_YELLOW=$'\033[33m'
+COLOR_BLUE=$'\033[34m'
+COLOR_RESET=$'\033[0m'
+
+msg()  { echo "${COLOR_BLUE}==>${COLOR_RESET} $*"; }
+ok()   { echo "${COLOR_GREEN}[OK]${COLOR_RESET} $*"; }
+warn() { echo "${COLOR_YELLOW}[WARN]${COLOR_RESET} $*"; }
+fail() { echo "${COLOR_RED}[FAIL]${COLOR_RESET} $*" >&2; }
+
+require_root() {
+  if [[ "${EUID:-0}" -ne 0 ]]; then
+    fail "Запустите от root: sudo bash /tmp/ubuntu-updates"
+    exit 1
+  fi
 }
 
-need python3
-need apt-config
-need unattended-upgrade
+have() {
+  command -v "$1" >/dev/null 2>&1
+}
 
-[[ -f "$F50" ]] || { echo "Нет файла $F50" >&2; exit 1; }
+cleanup_legacy_noise() {
+  # Старые backup-файлы внутри /etc/apt/apt.conf.d/ вызывают notice
+  # вида "Ignoring file ... invalid filename extension"
+  rm -f /etc/apt/apt.conf.d/20auto-upgrades.bak.* \
+        /etc/apt/apt.conf.d/50unattended-upgrades.bak.* || true
+}
 
-cp -a "$F50" "$B50"
-if [[ -f "$F20" ]]; then
-  cp -a "$F20" "$B20"
-fi
+ensure_packages() {
+  local missing=()
 
-python3 - "$F50" "$F20" <<'PY'
+  have apt-config || missing+=(apt)
+  have python3 || missing+=(python3)
+  have unattended-upgrade || missing+=(unattended-upgrades)
+
+  if ((${#missing[@]} > 0)); then
+    msg "Ставлю недостающие пакеты: ${missing[*]}"
+    apt-get update -y
+    apt-get install -y "${missing[@]}"
+  fi
+}
+
+backup_files() {
+  mkdir -p "$BACKUP_DIR"
+
+  [[ -f "$F50" ]] || {
+    fail "Не найден файл $F50"
+    exit 1
+  }
+
+  cp -a "$F50" "$B50"
+  if [[ -f "$F20" ]]; then
+    cp -a "$F20" "$B20"
+  fi
+}
+
+restore_backups() {
+  warn "Откат к backup..."
+  cp -af "$B50" "$F50"
+  if [[ -f "$B20" ]]; then
+    cp -af "$B20" "$F20"
+  else
+    rm -f "$F20"
+  fi
+}
+
+patch_configs() {
+  python3 - "$F50" "$F20" "$AUTO_REBOOT_TIME" <<'PY'
 from pathlib import Path
-import re, sys
+import re
+import sys
 
 f50 = Path(sys.argv[1])
 f20 = Path(sys.argv[2])
+auto_reboot_time = sys.argv[3]
 
 t50 = f50.read_text(encoding="utf-8")
 
 def set_scalar(text: str, key: str, value: str) -> str:
-    pat = re.compile(rf'(?m)^[ \t]*(?://\s*)?{re.escape(key)}\s+"[^"\n]*";[ \t]*$')
+    pat = re.compile(
+        rf'(?m)^[ \t]*(?://\s*)?{re.escape(key)}\s+"[^"\n]*";[ \t]*$'
+    )
+    repl = f'{key} "{value}";'
     if pat.search(text):
-        text = pat.sub(f'{key} "{value}";', text)
+        text = pat.sub(repl, text)
     else:
-        text = text.rstrip('\n') + f'\n{key} "{value}";\n'
+        text = text.rstrip('\n') + '\n' + repl + '\n'
     return text
 
+# Allowed-Origins block
 m = re.search(r'(?ms)(Unattended-Upgrade::Allowed-Origins\s*\{)(.*?)(^\s*\};)', t50)
 if not m:
     raise SystemExit("Не найден блок Unattended-Upgrade::Allowed-Origins")
@@ -64,7 +125,7 @@ for key, value in [
     ('Unattended-Upgrade::Remove-Unused-Kernel-Packages', 'true'),
     ('Unattended-Upgrade::Remove-New-Unused-Dependencies', 'true'),
     ('Unattended-Upgrade::Automatic-Reboot', 'true'),
-    ('Unattended-Upgrade::Automatic-Reboot-Time', '04:22'),
+    ('Unattended-Upgrade::Automatic-Reboot-Time', auto_reboot_time),
 ]:
     t50 = set_scalar(t50, key, value)
 
@@ -79,37 +140,207 @@ for key, value in [
     ('APT::Periodic::Update-Package-Lists', '1'),
     ('APT::Periodic::Unattended-Upgrade', '1'),
 ]:
-    pat = re.compile(rf'(?m)^[ \t]*(?://\s*)?{re.escape(key)}\s+"[^"\n]*";[ \t]*$')
+    pat = re.compile(
+        rf'(?m)^[ \t]*(?://\s*)?{re.escape(key)}\s+"[^"\n]*";[ \t]*$'
+    )
+    repl = f'{key} "{value}";'
     if pat.search(t20):
-        t20 = pat.sub(f'{key} "{value}";', t20)
+        t20 = pat.sub(repl, t20)
     else:
-        t20 = t20.rstrip('\n') + f'\n{key} "{value}";\n'
+        t20 = t20.rstrip('\n') + '\n' + repl + '\n'
 
 f20.write_text(t20, encoding='utf-8')
 PY
+}
 
-if ! apt-config dump >/dev/null; then
-  echo "Ошибка синтаксиса APT-конфига. Откат..." >&2
-  cp -af "$B50" "$F50"
-  if [[ -f "$B20" ]]; then
-    cp -af "$B20" "$F20"
+validate_config() {
+  if apt-config dump >/dev/null 2>&1; then
+    ok "Синтаксис APT-конфига: OK"
   else
-    rm -f "$F20"
+    fail "Ошибка синтаксиса APT-конфига"
+    restore_backups
+    exit 1
   fi
-  exit 1
-fi
+}
 
-echo "Синтаксис APT-конфига: OK"
-echo
+ensure_timers() {
+  systemctl unmask apt-daily.timer apt-daily-upgrade.timer >/dev/null 2>&1 || true
+  systemctl enable --now apt-daily.timer apt-daily-upgrade.timer >/dev/null 2>&1 || true
+}
 
-echo "Тест unattended-upgrade --dry-run..."
-unattended-upgrade -v --dry-run || true
-echo
+run_dry_run() {
+  local drylog
+  drylog="$(mktemp /tmp/uu-dryrun.XXXXXX.log)"
 
-echo "Проверка systemd timers..."
-systemctl is-enabled apt-daily.timer apt-daily-upgrade.timer || true
-systemctl --no-pager --full status apt-daily.timer apt-daily-upgrade.timer | sed -n '1,80p' || true
+  msg "Тест unattended-upgrade --dry-run..."
+  if unattended-upgrade -v --dry-run >"$drylog" 2>&1; then
+    ok "Dry-run: OK"
+  else
+    warn "Dry-run завершился с ненулевым кодом. Сохранил лог: $drylog"
+  fi
 
-echo
-echo "Backup 50: $B50"
-echo "Backup 20: $B20"
+  echo
+  sed -n '1,120p' "$drylog" || true
+  echo
+
+  DRYLOG_PATH="$drylog"
+}
+
+show_timers() {
+  echo
+  msg "Проверка systemd timers..."
+  systemctl is-enabled apt-daily.timer apt-daily-upgrade.timer || true
+  systemctl --no-pager --full status apt-daily.timer apt-daily-upgrade.timer | sed -n '1,80p' || true
+}
+
+show_pro_status() {
+  echo
+  msg "Проверка Ubuntu Pro..."
+  if have pro; then
+    pro status || true
+    echo
+    pro security-status || true
+    echo
+    if have canonical-livepatch; then
+      canonical-livepatch status || true
+    fi
+  else
+    warn "Команда 'pro' не найдена"
+  fi
+}
+
+print_effective_config() {
+  echo
+  msg "Итоговые параметры:"
+  grep -nE 'Remove-Unused-Kernel-Packages|Remove-New-Unused-Dependencies|Automatic-Reboot|Automatic-Reboot-Time' "$F50" || true
+  grep -nE 'APT::Periodic::Update-Package-Lists|APT::Periodic::Unattended-Upgrade' "$F20" || true
+  grep -n '\${distro_id}:\${distro_codename}-updates' "$F50" || true
+}
+
+summary() {
+  local status="OK"
+  local notes=()
+
+  if ! apt-config dump >/dev/null 2>&1; then
+    status="FAIL"
+    notes+=("APT config syntax broken")
+  fi
+
+  if ! grep -q 'APT::Periodic::Update-Package-Lists "1";' "$F20"; then
+    status="FAIL"
+    notes+=("Update-Package-Lists is not 1")
+  fi
+
+  if ! grep -q 'APT::Periodic::Unattended-Upgrade "1";' "$F20"; then
+    status="FAIL"
+    notes+=("Unattended-Upgrade is not 1")
+  fi
+
+  if ! grep -q 'Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";' "$F50"; then
+    status="FAIL"
+    notes+=("Remove-Unused-Kernel-Packages is not true")
+  fi
+
+  if ! grep -q 'Unattended-Upgrade::Remove-New-Unused-Dependencies "true";' "$F50"; then
+    status="FAIL"
+    notes+=("Remove-New-Unused-Dependencies is not true")
+  fi
+
+  if ! grep -q 'Unattended-Upgrade::Automatic-Reboot "true";' "$F50"; then
+    status="FAIL"
+    notes+=("Automatic-Reboot is not true")
+  fi
+
+  if ! grep -q "Unattended-Upgrade::Automatic-Reboot-Time \"${AUTO_REBOOT_TIME}\";" "$F50"; then
+    status="FAIL"
+    notes+=("Automatic-Reboot-Time is not ${AUTO_REBOOT_TIME}")
+  fi
+
+  if ! grep -q '\${distro_id}:\${distro_codename}-updates' "$F50"; then
+    status="FAIL"
+    notes+=("-updates origin not enabled")
+  fi
+
+  if ! systemctl is-enabled apt-daily.timer >/dev/null 2>&1; then
+    status="FAIL"
+    notes+=("apt-daily.timer is not enabled")
+  fi
+
+  if ! systemctl is-enabled apt-daily-upgrade.timer >/dev/null 2>&1; then
+    status="FAIL"
+    notes+=("apt-daily-upgrade.timer is not enabled")
+  fi
+
+  if [[ -n "${DRYLOG_PATH:-}" ]]; then
+    if grep -qE 'All upgrades installed|No packages found that can be upgraded unattended' "$DRYLOG_PATH"; then
+      :
+    else
+      [[ "$status" == "OK" ]] && status="WARN"
+      notes+=("Dry-run output should be reviewed")
+    fi
+  fi
+
+  echo
+  echo "========== SUMMARY =========="
+  echo "APT syntax                 : OK"
+  echo "Daily package list update  : $(grep -q 'APT::Periodic::Update-Package-Lists "1";' "$F20" && echo ON || echo OFF)"
+  echo "Daily unattended upgrade   : $(grep -q 'APT::Periodic::Unattended-Upgrade "1";' "$F20" && echo ON || echo OFF)"
+  echo "Allow noble-updates        : $(grep -q '\${distro_id}:\${distro_codename}-updates' "$F50" && echo ON || echo OFF)"
+  echo "Kernel cleanup             : $(grep -q 'Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";' "$F50" && echo ON || echo OFF)"
+  echo "New unused deps cleanup    : $(grep -q 'Unattended-Upgrade::Remove-New-Unused-Dependencies "true";' "$F50" && echo ON || echo OFF)"
+  echo "Automatic reboot           : $(grep -q 'Unattended-Upgrade::Automatic-Reboot "true";' "$F50" && echo ON || echo OFF)"
+  echo "Reboot time                : ${AUTO_REBOOT_TIME}"
+  echo "apt-daily.timer            : $(systemctl is-enabled apt-daily.timer >/dev/null 2>&1 && echo enabled || echo disabled)"
+  echo "apt-daily-upgrade.timer    : $(systemctl is-enabled apt-daily-upgrade.timer >/dev/null 2>&1 && echo enabled || echo disabled)"
+  echo "Logs dir                   : /var/log/unattended-upgrades"
+  echo "Backups dir                : ${BACKUP_DIR}"
+
+  if have pro; then
+    echo "Ubuntu Pro client          : present"
+    echo "Pro attached               : $(pro status 2>/dev/null | grep -qi 'attached' && echo yes || echo no/unknown)"
+  else
+    echo "Ubuntu Pro client          : absent"
+  fi
+
+  echo
+  if [[ "$status" == "OK" ]]; then
+    ok "STATUS: OK"
+  elif [[ "$status" == "WARN" ]]; then
+    warn "STATUS: WARN"
+  else
+    fail "STATUS: FAIL"
+  fi
+
+  if ((${#notes[@]} > 0)); then
+    echo
+    echo "Пояснения:"
+    for note in "${notes[@]}"; do
+      echo "- $note"
+    done
+  fi
+
+  echo
+  echo "Backup 50: $B50"
+  if [[ -f "$B20" ]]; then
+    echo "Backup 20: $B20"
+  else
+    echo "Backup 20: not needed (file was created from scratch)"
+  fi
+}
+
+main() {
+  require_root
+  cleanup_legacy_noise
+  ensure_packages
+  backup_files
+  patch_configs
+  validate_config
+  ensure_timers
+  run_dry_run
+  show_timers
+  show_pro_status
+  print_effective_config
+  summary
+}
+
+main "$@"
