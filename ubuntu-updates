@@ -1,0 +1,126 @@
+sudo tee /usr/local/sbin/uu-vps-harden >/dev/null <<'BASH'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+F50=/etc/apt/apt.conf.d/50unattended-upgrades
+F20=/etc/apt/apt.conf.d/20auto-upgrades
+STAMP="$(date +%F-%H%M%S)"
+B50="${F50}.bak.${STAMP}"
+B20="${F20}.bak.${STAMP}"
+
+need() {
+  command -v "$1" >/dev/null 2>&1 || { echo "Не найдено: $1" >&2; exit 1; }
+}
+
+need python3
+need apt-config
+need unattended-upgrade
+
+[[ -f "$F50" ]] || { echo "Нет файла $F50" >&2; exit 1; }
+
+cp -a "$F50" "$B50"
+if [[ -f "$F20" ]]; then
+  cp -a "$F20" "$B20"
+fi
+
+python3 - "$F50" "$F20" <<'PY'
+from pathlib import Path
+import re, sys
+
+f50 = Path(sys.argv[1])
+f20 = Path(sys.argv[2])
+
+t50 = f50.read_text(encoding="utf-8")
+
+def set_scalar(text: str, key: str, value: str) -> str:
+    pat = re.compile(rf'(?m)^[ \t]*(?://\s*)?{re.escape(key)}\s+"[^"\n]*";[ \t]*$')
+    text = pat.sub('', text)
+    text = re.sub(r'\n{3,}', '\n\n', text).rstrip('\n') + '\n'
+    text += f'{key} "{value}";\n'
+    return text
+
+# Нормализуем Allowed-Origins и включаем -updates
+m = re.search(r'(?ms)(Unattended-Upgrade::Allowed-Origins\s*\{)(.*?)(^\s*\};)', t50)
+if not m:
+    raise SystemExit("Не найден блок Unattended-Upgrade::Allowed-Origins в 50unattended-upgrades")
+
+head, body, tail = m.group(1), m.group(2), m.group(3)
+
+updates_line_regex = re.compile(
+    r'(?m)^[ \t]*(?://\s*)?("\$\{distro_id\}:\$\{distro_codename\}-updates";)[ \t]*$'
+)
+
+if updates_line_regex.search(body):
+    body = updates_line_regex.sub(r'        \1', body)
+else:
+    body = body.rstrip('\n') + '\n        "${distro_id}:${distro_codename}-updates";\n'
+
+t50 = t50[:m.start()] + head + body + tail + t50[m.end():]
+
+for key, value in [
+    ('Unattended-Upgrade::Remove-Unused-Kernel-Packages', 'true'),
+    ('Unattended-Upgrade::Remove-New-Unused-Dependencies', 'true'),
+    ('Unattended-Upgrade::Automatic-Reboot', 'true'),
+    ('Unattended-Upgrade::Automatic-Reboot-Time', '04:22'),
+]:
+    t50 = set_scalar(t50, key, value)
+
+f50.write_text(t50, encoding='utf-8')
+
+# 20auto-upgrades: включаем ежедневный запуск
+if f20.exists():
+    t20 = f20.read_text(encoding='utf-8')
+else:
+    t20 = ''
+
+for key, value in [
+    ('APT::Periodic::Update-Package-Lists', '1'),
+    ('APT::Periodic::Unattended-Upgrade', '1'),
+]:
+    pat = re.compile(rf'(?m)^[ \t]*(?://\s*)?{re.escape(key)}\s+"[^"\n]*";[ \t]*$')
+    t20 = pat.sub('', t20)
+    t20 = t20.rstrip('\n') + '\n'
+    t20 += f'{key} "{value}";\n'
+
+f20.write_text(t20, encoding='utf-8')
+PY
+
+# Валидируем APT-конфиг
+if ! apt-config dump >/dev/null; then
+  echo "Ошибка синтаксиса APT-конфига. Откатываю изменения..." >&2
+  cp -af "$B50" "$F50"
+  if [[ -f "$B20" ]]; then
+    cp -af "$B20" "$F20"
+  else
+    rm -f "$F20"
+  fi
+  exit 1
+fi
+
+echo "Синтаксис APT-конфига: OK"
+echo
+
+echo "Тест unattended-upgrade --dry-run..."
+if unattended-upgrade -v --dry-run; then
+  echo
+  echo "Dry-run: OK"
+else
+  echo
+  echo "Dry-run завершился с ошибкой, но конфиг сохранен."
+  echo "Чаще всего это lock APT, временная ошибка репозитория или сеть."
+fi
+
+echo
+echo "Backup 50: $B50"
+if [[ -f "$B20" ]]; then
+  echo "Backup 20: $B20"
+fi
+
+echo
+echo "Итоговые параметры:"
+grep -nE 'Remove-Unused-Kernel-Packages|Remove-New-Unused-Dependencies|Automatic-Reboot|Automatic-Reboot-Time' "$F50" || true
+grep -nE 'APT::Periodic::Update-Package-Lists|APT::Periodic::Unattended-Upgrade' "$F20" || true
+grep -n '\${distro_id}:\${distro_codename}-updates' "$F50" || true
+BASH
+
+sudo chmod 0755 /usr/local/sbin/uu-vps-harden
