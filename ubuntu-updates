@@ -3,15 +3,30 @@ set -Eeuo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
 
+APT_DAILY_TIME="${APT_DAILY_TIME:-02:30:00}"
+APT_UPGRADE_TIME="${APT_UPGRADE_TIME:-02:50:00}"
+AUTO_REBOOT_TIME="${AUTO_REBOOT_TIME:-04:22}"
+
 F50="/etc/apt/apt.conf.d/50unattended-upgrades"
 F20="/etc/apt/apt.conf.d/20auto-upgrades"
 BACKUP_DIR="/root/apt-conf-backups"
 STAMP="$(date +%F-%H%M%S)"
 
+OD1_DIR="/etc/systemd/system/apt-daily.timer.d"
+OD2_DIR="/etc/systemd/system/apt-daily-upgrade.timer.d"
+OD1="${OD1_DIR}/override.conf"
+OD2="${OD2_DIR}/override.conf"
+
 B50="${BACKUP_DIR}/50unattended-upgrades.${STAMP}.bak"
 B20="${BACKUP_DIR}/20auto-upgrades.${STAMP}.bak"
+BOD1="${BACKUP_DIR}/apt-daily.timer.override.${STAMP}.bak"
+BOD2="${BACKUP_DIR}/apt-daily-upgrade.timer.override.${STAMP}.bak"
 
-AUTO_REBOOT_TIME="04:22"
+HAD_F20=0
+HAD_OD1=0
+HAD_OD2=0
+DRYLOG_PATH=""
+SYSTEM_TZ=""
 
 COLOR_RED=$'\033[31m'
 COLOR_GREEN=$'\033[32m'
@@ -35,9 +50,40 @@ have() {
   command -v "$1" >/dev/null 2>&1
 }
 
+file_has_active_line() {
+  local file="$1"
+  local regex="$2"
+  grep -Eq "$regex" "$file"
+}
+
+apt_effective_equals() {
+  local key="$1"
+  local value="$2"
+  apt-config dump "$key" 2>/dev/null | grep -Fq "${key} \"${value}\";"
+}
+
+timer_override_ok() {
+  local file="$1"
+  local time_value="$2"
+  [[ -f "$file" ]] || return 1
+  grep -Fqx '[Timer]' "$file" || return 1
+  grep -Fqx 'OnCalendar=' "$file" || return 1
+  grep -Fqx "OnCalendar=*-*-* ${time_value}" "$file" || return 1
+  grep -Fqx 'RandomizedDelaySec=0' "$file" || return 1
+  grep -Fqx 'AccuracySec=1s' "$file" || return 1
+}
+
+capture_system_tz() {
+  SYSTEM_TZ="$(timedatectl show -p Timezone --value 2>/dev/null || true)"
+  if [[ -z "$SYSTEM_TZ" && -r /etc/timezone ]]; then
+    SYSTEM_TZ="$(cat /etc/timezone 2>/dev/null || true)"
+  fi
+  if [[ -z "$SYSTEM_TZ" ]]; then
+    SYSTEM_TZ="$(date +%Z)"
+  fi
+}
+
 cleanup_legacy_noise() {
-  # Старые backup-файлы внутри /etc/apt/apt.conf.d/ вызывают notice
-  # вида "Ignoring file ... invalid filename extension"
   rm -f /etc/apt/apt.conf.d/20auto-upgrades.bak.* \
         /etc/apt/apt.conf.d/50unattended-upgrades.bak.* || true
 }
@@ -45,15 +91,18 @@ cleanup_legacy_noise() {
 ensure_packages() {
   local missing=()
 
-  have apt-config || missing+=(apt)
-  have python3 || missing+=(python3)
-  have unattended-upgrade || missing+=(unattended-upgrades)
+  dpkg -s unattended-upgrades >/dev/null 2>&1 || missing+=(unattended-upgrades)
+  dpkg -s python3 >/dev/null 2>&1 || missing+=(python3)
 
   if ((${#missing[@]} > 0)); then
     msg "Ставлю недостающие пакеты: ${missing[*]}"
     apt-get update -y
     apt-get install -y "${missing[@]}"
   fi
+
+  have apt-config || { fail "Не найдена команда apt-config"; exit 1; }
+  have systemctl || { fail "Не найдена команда systemctl"; exit 1; }
+  have unattended-upgrade || { fail "Не найдена команда unattended-upgrade"; exit 1; }
 }
 
 backup_files() {
@@ -65,19 +114,52 @@ backup_files() {
   }
 
   cp -a "$F50" "$B50"
+
   if [[ -f "$F20" ]]; then
+    HAD_F20=1
     cp -a "$F20" "$B20"
+  fi
+
+  if [[ -f "$OD1" ]]; then
+    HAD_OD1=1
+    cp -a "$OD1" "$BOD1"
+  fi
+
+  if [[ -f "$OD2" ]]; then
+    HAD_OD2=1
+    cp -a "$OD2" "$BOD2"
   fi
 }
 
-restore_backups() {
-  warn "Откат к backup..."
-  cp -af "$B50" "$F50"
-  if [[ -f "$B20" ]]; then
+restore_all() {
+  warn "Откатываю изменения к backup..."
+
+  [[ -f "$B50" ]] && cp -af "$B50" "$F50"
+
+  if [[ "$HAD_F20" -eq 1 && -f "$B20" ]]; then
     cp -af "$B20" "$F20"
   else
     rm -f "$F20"
   fi
+
+  if [[ "$HAD_OD1" -eq 1 && -f "$BOD1" ]]; then
+    mkdir -p "$OD1_DIR"
+    cp -af "$BOD1" "$OD1"
+  else
+    rm -f "$OD1"
+    rmdir --ignore-fail-on-non-empty "$OD1_DIR" 2>/dev/null || true
+  fi
+
+  if [[ "$HAD_OD2" -eq 1 && -f "$BOD2" ]]; then
+    mkdir -p "$OD2_DIR"
+    cp -af "$BOD2" "$OD2"
+  else
+    rm -f "$OD2"
+    rmdir --ignore-fail-on-non-empty "$OD2_DIR" 2>/dev/null || true
+  fi
+
+  systemctl daemon-reload >/dev/null 2>&1 || true
+  systemctl restart apt-daily.timer apt-daily-upgrade.timer >/dev/null 2>&1 || true
 }
 
 patch_configs() {
@@ -93,17 +175,12 @@ auto_reboot_time = sys.argv[3]
 t50 = f50.read_text(encoding="utf-8")
 
 def set_scalar(text: str, key: str, value: str) -> str:
-    pat = re.compile(
-        rf'(?m)^[ \t]*(?://\s*)?{re.escape(key)}\s+"[^"\n]*";[ \t]*$'
-    )
-    repl = f'{key} "{value}";'
-    if pat.search(text):
-        text = pat.sub(repl, text)
-    else:
-        text = text.rstrip('\n') + '\n' + repl + '\n'
+    pat = re.compile(rf'(?m)^[ \t]*(?://\s*)?{re.escape(key)}\s+"[^"\n]*";[ \t]*$')
+    text = pat.sub('', text)
+    text = re.sub(r'\n{3,}', '\n\n', text).rstrip('\n') + '\n'
+    text += f'{key} "{value}";\n'
     return text
 
-# Allowed-Origins block
 m = re.search(r'(?ms)(Unattended-Upgrade::Allowed-Origins\s*\{)(.*?)(^\s*\};)', t50)
 if not m:
     raise SystemExit("Не найден блок Unattended-Upgrade::Allowed-Origins")
@@ -140,17 +217,39 @@ for key, value in [
     ('APT::Periodic::Update-Package-Lists', '1'),
     ('APT::Periodic::Unattended-Upgrade', '1'),
 ]:
-    pat = re.compile(
-        rf'(?m)^[ \t]*(?://\s*)?{re.escape(key)}\s+"[^"\n]*";[ \t]*$'
-    )
-    repl = f'{key} "{value}";'
-    if pat.search(t20):
-        t20 = pat.sub(repl, t20)
-    else:
-        t20 = t20.rstrip('\n') + '\n' + repl + '\n'
+    pat = re.compile(rf'(?m)^[ \t]*(?://\s*)?{re.escape(key)}\s+"[^"\n]*";[ \t]*$')
+    t20 = pat.sub('', t20)
+    t20 = re.sub(r'\n{3,}', '\n\n', t20).rstrip('\n') + '\n'
+    t20 += f'{key} "{value}";\n'
 
 f20.write_text(t20, encoding='utf-8')
 PY
+}
+
+apply_timer_overrides() {
+  mkdir -p "$OD1_DIR" "$OD2_DIR"
+
+  cat > "$OD1" <<EOF
+[Timer]
+OnCalendar=
+OnCalendar=*-*-* ${APT_DAILY_TIME}
+RandomizedDelaySec=0
+AccuracySec=1s
+EOF
+
+  cat > "$OD2" <<EOF
+[Timer]
+OnCalendar=
+OnCalendar=*-*-* ${APT_UPGRADE_TIME}
+RandomizedDelaySec=0
+AccuracySec=1s
+EOF
+
+  if ! systemctl daemon-reload; then
+    fail "Не удалось выполнить systemctl daemon-reload"
+    restore_all
+    exit 1
+  fi
 }
 
 validate_config() {
@@ -158,14 +257,17 @@ validate_config() {
     ok "Синтаксис APT-конфига: OK"
   else
     fail "Ошибка синтаксиса APT-конфига"
-    restore_backups
+    restore_all
     exit 1
   fi
 }
 
 ensure_timers() {
   systemctl unmask apt-daily.timer apt-daily-upgrade.timer >/dev/null 2>&1 || true
-  systemctl enable --now apt-daily.timer apt-daily-upgrade.timer >/dev/null 2>&1 || true
+  systemctl unmask apt-daily.service apt-daily-upgrade.service >/dev/null 2>&1 || true
+
+  systemctl enable apt-daily.timer apt-daily-upgrade.timer >/dev/null
+  systemctl restart apt-daily.timer apt-daily-upgrade.timer >/dev/null
 }
 
 run_dry_run() {
@@ -211,54 +313,75 @@ show_pro_status() {
 
 print_effective_config() {
   echo
-  msg "Итоговые параметры:"
+  msg "Итоговые параметры в файлах конфигурации:"
   grep -nE 'Remove-Unused-Kernel-Packages|Remove-New-Unused-Dependencies|Automatic-Reboot|Automatic-Reboot-Time' "$F50" || true
   grep -nE 'APT::Periodic::Update-Package-Lists|APT::Periodic::Unattended-Upgrade' "$F20" || true
-  grep -n '\${distro_id}:\${distro_codename}-updates' "$F50" || true
+  grep -nE '^[[:space:]]*"\$\{distro_id\}:\$\{distro_codename\}-updates";' "$F50" || true
 }
 
 summary() {
   local status="OK"
   local notes=()
+  local next_daily=""
+  local next_upgrade=""
+  local pro_present="no"
+
+  next_daily="$(systemctl show -p NextElapseUSecRealtime --value apt-daily.timer 2>/dev/null || true)"
+  next_upgrade="$(systemctl show -p NextElapseUSecRealtime --value apt-daily-upgrade.timer 2>/dev/null || true)"
+
+  if ! dpkg -s unattended-upgrades >/dev/null 2>&1; then
+    status="FAIL"
+    notes+=("Пакет unattended-upgrades не установлен")
+  fi
 
   if ! apt-config dump >/dev/null 2>&1; then
     status="FAIL"
-    notes+=("APT config syntax broken")
+    notes+=("APT config syntax is broken")
   fi
 
-  if ! grep -q 'APT::Periodic::Update-Package-Lists "1";' "$F20"; then
+  if ! apt_effective_equals 'APT::Periodic::Update-Package-Lists' '1'; then
     status="FAIL"
-    notes+=("Update-Package-Lists is not 1")
+    notes+=("APT::Periodic::Update-Package-Lists != 1")
   fi
 
-  if ! grep -q 'APT::Periodic::Unattended-Upgrade "1";' "$F20"; then
+  if ! apt_effective_equals 'APT::Periodic::Unattended-Upgrade' '1'; then
     status="FAIL"
-    notes+=("Unattended-Upgrade is not 1")
+    notes+=("APT::Periodic::Unattended-Upgrade != 1")
   fi
 
-  if ! grep -q 'Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";' "$F50"; then
+  if ! file_has_active_line "$F50" '^[[:space:]]*Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";[[:space:]]*$'; then
     status="FAIL"
-    notes+=("Remove-Unused-Kernel-Packages is not true")
+    notes+=("Remove-Unused-Kernel-Packages != true")
   fi
 
-  if ! grep -q 'Unattended-Upgrade::Remove-New-Unused-Dependencies "true";' "$F50"; then
+  if ! file_has_active_line "$F50" '^[[:space:]]*Unattended-Upgrade::Remove-New-Unused-Dependencies "true";[[:space:]]*$'; then
     status="FAIL"
-    notes+=("Remove-New-Unused-Dependencies is not true")
+    notes+=("Remove-New-Unused-Dependencies != true")
   fi
 
-  if ! grep -q 'Unattended-Upgrade::Automatic-Reboot "true";' "$F50"; then
+  if ! file_has_active_line "$F50" '^[[:space:]]*Unattended-Upgrade::Automatic-Reboot "true";[[:space:]]*$'; then
     status="FAIL"
-    notes+=("Automatic-Reboot is not true")
+    notes+=("Automatic-Reboot != true")
   fi
 
-  if ! grep -q "Unattended-Upgrade::Automatic-Reboot-Time \"${AUTO_REBOOT_TIME}\";" "$F50"; then
+  if ! file_has_active_line "$F50" "^[[:space:]]*Unattended-Upgrade::Automatic-Reboot-Time \\\"${AUTO_REBOOT_TIME}\\\";[[:space:]]*$"; then
     status="FAIL"
-    notes+=("Automatic-Reboot-Time is not ${AUTO_REBOOT_TIME}")
+    notes+=("Automatic-Reboot-Time != ${AUTO_REBOOT_TIME}")
   fi
 
-  if ! grep -q '\${distro_id}:\${distro_codename}-updates' "$F50"; then
+  if ! file_has_active_line "$F50" '^[[:space:]]*"\$\{distro_id\}:\$\{distro_codename\}-updates";[[:space:]]*$'; then
     status="FAIL"
-    notes+=("-updates origin not enabled")
+    notes+=("-updates origin is not enabled")
+  fi
+
+  if ! timer_override_ok "$OD1" "$APT_DAILY_TIME"; then
+    status="FAIL"
+    notes+=("apt-daily.timer override is missing or wrong")
+  fi
+
+  if ! timer_override_ok "$OD2" "$APT_UPGRADE_TIME"; then
+    status="FAIL"
+    notes+=("apt-daily-upgrade.timer override is missing or wrong")
   fi
 
   if ! systemctl is-enabled apt-daily.timer >/dev/null 2>&1; then
@@ -271,8 +394,18 @@ summary() {
     notes+=("apt-daily-upgrade.timer is not enabled")
   fi
 
-  if [[ -n "${DRYLOG_PATH:-}" ]]; then
-    if grep -qE 'All upgrades installed|No packages found that can be upgraded unattended' "$DRYLOG_PATH"; then
+  if ! systemctl is-active apt-daily.timer >/dev/null 2>&1; then
+    status="FAIL"
+    notes+=("apt-daily.timer is not active")
+  fi
+
+  if ! systemctl is-active apt-daily-upgrade.timer >/dev/null 2>&1; then
+    status="FAIL"
+    notes+=("apt-daily-upgrade.timer is not active")
+  fi
+
+  if [[ -n "$DRYLOG_PATH" ]]; then
+    if grep -qE 'All upgrades installed|No packages found that can be upgraded unattended|Packages that will be upgraded:' "$DRYLOG_PATH"; then
       :
     else
       [[ "$status" == "OK" ]] && status="WARN"
@@ -280,27 +413,29 @@ summary() {
     fi
   fi
 
+  if have pro; then
+    pro_present="yes"
+  fi
+
   echo
   echo "========== SUMMARY =========="
-  echo "APT syntax                 : OK"
-  echo "Daily package list update  : $(grep -q 'APT::Periodic::Update-Package-Lists "1";' "$F20" && echo ON || echo OFF)"
-  echo "Daily unattended upgrade   : $(grep -q 'APT::Periodic::Unattended-Upgrade "1";' "$F20" && echo ON || echo OFF)"
-  echo "Allow noble-updates        : $(grep -q '\${distro_id}:\${distro_codename}-updates' "$F50" && echo ON || echo OFF)"
-  echo "Kernel cleanup             : $(grep -q 'Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";' "$F50" && echo ON || echo OFF)"
-  echo "New unused deps cleanup    : $(grep -q 'Unattended-Upgrade::Remove-New-Unused-Dependencies "true";' "$F50" && echo ON || echo OFF)"
-  echo "Automatic reboot           : $(grep -q 'Unattended-Upgrade::Automatic-Reboot "true";' "$F50" && echo ON || echo OFF)"
-  echo "Reboot time                : ${AUTO_REBOOT_TIME}"
-  echo "apt-daily.timer            : $(systemctl is-enabled apt-daily.timer >/dev/null 2>&1 && echo enabled || echo disabled)"
-  echo "apt-daily-upgrade.timer    : $(systemctl is-enabled apt-daily-upgrade.timer >/dev/null 2>&1 && echo enabled || echo disabled)"
+  echo "System timezone            : ${SYSTEM_TZ}"
+  echo "APT daily lists update     : $(apt_effective_equals 'APT::Periodic::Update-Package-Lists' '1' && echo ON || echo OFF)"
+  echo "APT unattended upgrade     : $(apt_effective_equals 'APT::Periodic::Unattended-Upgrade' '1' && echo ON || echo OFF)"
+  echo "Allow noble-updates        : $(file_has_active_line "$F50" '^[[:space:]]*"\$\{distro_id\}:\$\{distro_codename\}-updates";[[:space:]]*$' && echo ON || echo OFF)"
+  echo "Kernel cleanup             : $(file_has_active_line "$F50" '^[[:space:]]*Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";[[:space:]]*$' && echo ON || echo OFF)"
+  echo "New unused deps cleanup    : $(file_has_active_line "$F50" '^[[:space:]]*Unattended-Upgrade::Remove-New-Unused-Dependencies "true";[[:space:]]*$' && echo ON || echo OFF)"
+  echo "Automatic reboot           : $(file_has_active_line "$F50" '^[[:space:]]*Unattended-Upgrade::Automatic-Reboot "true";[[:space:]]*$' && echo ON || echo OFF)"
+  echo "Automatic reboot time      : ${AUTO_REBOOT_TIME}"
+  echo "apt-daily time             : ${APT_DAILY_TIME}"
+  echo "apt-daily-upgrade time     : ${APT_UPGRADE_TIME}"
+  echo "apt-daily.timer            : $(systemctl is-enabled apt-daily.timer >/dev/null 2>&1 && echo enabled || echo disabled) / $(systemctl is-active apt-daily.timer >/dev/null 2>&1 && echo active || echo inactive)"
+  echo "apt-daily-upgrade.timer    : $(systemctl is-enabled apt-daily-upgrade.timer >/dev/null 2>&1 && echo enabled || echo disabled) / $(systemctl is-active apt-daily-upgrade.timer >/dev/null 2>&1 && echo active || echo inactive)"
+  echo "Next apt-daily run         : ${next_daily:-unknown}"
+  echo "Next apt-daily-upgrade run : ${next_upgrade:-unknown}"
+  echo "Ubuntu Pro client present  : ${pro_present}"
   echo "Logs dir                   : /var/log/unattended-upgrades"
   echo "Backups dir                : ${BACKUP_DIR}"
-
-  if have pro; then
-    echo "Ubuntu Pro client          : present"
-    echo "Pro attached               : $(pro status 2>/dev/null | grep -qi 'attached' && echo yes || echo no/unknown)"
-  else
-    echo "Ubuntu Pro client          : absent"
-  fi
 
   echo
   if [[ "$status" == "OK" ]]; then
@@ -321,19 +456,27 @@ summary() {
 
   echo
   echo "Backup 50: $B50"
-  if [[ -f "$B20" ]]; then
+  if [[ "$HAD_F20" -eq 1 ]]; then
     echo "Backup 20: $B20"
   else
     echo "Backup 20: not needed (file was created from scratch)"
+  fi
+  if [[ "$HAD_OD1" -eq 1 ]]; then
+    echo "Backup apt-daily override: $BOD1"
+  fi
+  if [[ "$HAD_OD2" -eq 1 ]]; then
+    echo "Backup apt-daily-upgrade override: $BOD2"
   fi
 }
 
 main() {
   require_root
+  capture_system_tz
   cleanup_legacy_noise
   ensure_packages
   backup_files
   patch_configs
+  apply_timer_overrides
   validate_config
   ensure_timers
   run_dry_run
