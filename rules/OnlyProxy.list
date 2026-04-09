@@ -1,7 +1,7 @@
 # # NAME: category-proxy
 # DESC: сервисы, которые должны идти через PROXY (мессенджеры/видео/соцсети/диагностика/Cloudflare)
 # AUTHOR: Proms
-# UPDATED: 2026-04-07
+# UPDATED: 2026-04-09
 
 ################################
 # Telegram — ВЕСЬ трафик через прокси (TCP+UDP)
@@ -60,20 +60,16 @@ DOMAIN-KEYWORD,nicegram
 # WhatsApp — ВЕСЬ трафик через прокси (TCP+UDP)
 ################################
 
-DOMAIN-KEYWORD,whatsapp
+# Основные домены WhatsApp
+DOMAIN-SUFFIX,whatsapp.com
+DOMAIN-SUFFIX,whatsapp.net
 DOMAIN-SUFFIX,wa.me
+DOMAIN-SUFFIX,wl.co
 DOMAIN,wa.meta.vc
 
-# Meta backbone
-IP-ASN,32934
-# IP-CIDR6,2a03:2880::/32,no-resolve
-
-# Calling / STUN/TURN
-DOMAIN-KEYWORD,edge-stun
-DOMAIN-KEYWORD,turn-msgr
-DOMAIN-KEYWORD,edgeray
-DOMAIN-KEYWORD,turnservice
-
+# Подстраховка на отдельные ветки/хосты, которые часто всплывают вокруг chat/media/call relay
+DOMAIN-KEYWORD,whatsapp-chatd
+DOMAIN-KEYWORD,whatsapp-cdn
 
 ################################
 # CLOUDFLARE (домены + официальные подсети)
@@ -81,17 +77,33 @@ DOMAIN-KEYWORD,turnservice
 
 # Основные branded-домены
 DOMAIN-KEYWORD,cloudflare
+DOMAIN-SUFFIX,cloudflare.com
+DOMAIN-SUFFIX,cloudflare-dns.com
+DOMAIN-SUFFIX,cloudflareclient.com
+DOMAIN-SUFFIX,cloudflarewarp.com
+DOMAIN-SUFFIX,cloudflareworkers.com
+DOMAIN-SUFFIX,cloudflareaccess.com
+DOMAIN-SUFFIX,cloudflarebrowser.com
+DOMAIN-SUFFIX,cloudflareinsights.com
+DOMAIN-SUFFIX,cloudflarestatus.com
 
 # Небрендовые / короткие / продуктовые
 DOMAIN-SUFFIX,argotunnel.com
+DOMAIN-SUFFIX,browser.run
 DOMAIN-SUFFIX,cfargotunnel.com
+DOMAIN-SUFFIX,cfdata.org
 DOMAIN-SUFFIX,cfl.re
 DOMAIN-SUFFIX,every1dns.net
+DOMAIN-SUFFIX,imagedelivery.net
 DOMAIN-SUFFIX,isbgpsafeyet.com
+DOMAIN-SUFFIX,one.one.one
 DOMAIN-SUFFIX,one.one.one.one
 DOMAIN-SUFFIX,pages.dev
-DOMAIN-SUFFIX,workers.dev
+DOMAIN-SUFFIX,r2.dev
+DOMAIN-SUFFIX,trycloudflare.com
 DOMAIN-SUFFIX,videodelivery.net
+DOMAIN-SUFFIX,warp.plus
+DOMAIN-SUFFIX,workers.dev
 
 # Официальные подсети Cloudflare (IPv4)
 IP-CIDR,173.245.48.0/20,no-resolve
@@ -115,10 +127,9 @@ IP-CIDR,131.0.72.0/22,no-resolve
 # IP-CIDR6,2606:4700::/32,no-resolve
 # IP-CIDR6,2803:f800::/32,no-resolve
 # IP-CIDR6,2405:b500::/32,no-resolve
+# IP-CIDR6,2405:8100::/32,no-resolve
 # IP-CIDR6,2a06:98c0::/29,no-resolve
 # IP-CIDR6,2c0f:f248::/32,no-resolve
-# IP-CIDR6,2405:8100::/32,no-resolve
-
 
 ################################
 # OPENAI / CHATGPT
@@ -126,6 +137,7 @@ IP-CIDR,131.0.72.0/22,no-resolve
 
 # Основной бренд / инфраструктура с openai в имени
 DOMAIN-KEYWORD,openai
+DOMAIN-SUFFIX,openai.com
 
 # Основные зоны и отдельные бренды
 DOMAIN-SUFFIX,chatgpt.com
@@ -135,6 +147,17 @@ DOMAIN-SUFFIX,oaiusercontent.com
 DOMAIN-SUFFIX,crixet.com
 DOMAIN-SUFFIX,sora.com
 DOMAIN-SUFFIX,ai.com
+
+# Актуальные CDN / API / media endpoints из geosite
+DOMAIN,openai.com.cdn.cloudflare.net
+DOMAIN,openaiapi-site.azureedge.net
+DOMAIN,openaicom-api-bdcpf8c6d2e9atf6.z01.azurefd.net
+DOMAIN,openaicom.imgix.net
+DOMAIN,openaicomproductionae4b.blob.core.windows.net
+DOMAIN,production-openaicom-storage.azureedge.net
+DOMAIN,chatgpt.livekit.cloud
+DOMAIN,host.livekit.cloud
+DOMAIN,turn.livekit.cloud
 
 # Зависимости
 DOMAIN-SUFFIX,arkoselabs.com
@@ -157,7 +180,6 @@ DOMAIN-SUFFIX,segment.io
 DOMAIN-SUFFIX,livekit.cloud
 DOMAIN-SUFFIX,ct.sendgrid.net
 # Примечание: Cloudflare Challenges покрываются секцией Cloudflare
-
 
 ################################
 # GOOGLE DEEPMIND / GOOGLE AI (Gemini/AI Studio и др.)
@@ -223,7 +245,6 @@ DOMAIN,tellapart.com
 DOMAIN-SUFFIX,vine.co
 DOMAIN-SUFFIX,cms-twdigitalassets.com
 
-
 ################################
 # TWITCH
 ################################
@@ -260,58 +281,66 @@ DOMAIN,dqrpb9wgowsf5.cloudfront.net
 DOMAIN,ds0h3roq6wcgc.cloudfront.net
 DOMAIN,dykkng5hnh52u.cloudfront.net
 
-
 ################################
 # META (Facebook/Instagram/Messenger/Threads/Oculus)
-# WhatsApp уже покрыт выше отдельной секцией
+# WhatsApp вынесен выше отдельной секцией, но Meta backbone нужен и для него
 ################################
 
-DOMAIN-KEYWORD,facebook
-DOMAIN-KEYWORD,instagram
-DOMAIN-KEYWORD,messenger
-
-DOMAIN-SUFFIX,fb.com
-DOMAIN-SUFFIX,fb.me
-DOMAIN-SUFFIX,fb.gg
-DOMAIN-SUFFIX,fb.watch
-DOMAIN-SUFFIX,fbcdn.net
-DOMAIN-SUFFIX,fbsbx.com
-DOMAIN-SUFFIX,m.me
-DOMAIN-SUFFIX,workplace.com
+# Основные продуктовые домены
+DOMAIN-SUFFIX,facebook.com
+DOMAIN-SUFFIX,messenger.com
+DOMAIN-SUFFIX,instagram.com
+DOMAIN-SUFFIX,threads.net
 DOMAIN-SUFFIX,meta.com
 DOMAIN-SUFFIX,meta.ai
 DOMAIN-SUFFIX,llama.com
 DOMAIN-SUFFIX,oculus.com
-DOMAIN-SUFFIX,threads.net
+DOMAIN-SUFFIX,workplace.com
+DOMAIN-SUFFIX,accountkit.com
+
+# Короткие / служебные / CDN / вложения
+DOMAIN-SUFFIX,fb.com
+DOMAIN-SUFFIX,fb.me
+DOMAIN-SUFFIX,fb.gg
+DOMAIN-SUFFIX,fb.watch
+DOMAIN-SUFFIX,fbcdn.com
+DOMAIN-SUFFIX,fbcdn.net
+DOMAIN-SUFFIX,fbsbx.com
+DOMAIN-SUFFIX,fbsbx.net
+DOMAIN-SUFFIX,fbidb.io
+DOMAIN-SUFFIX,m.me
 DOMAIN,ig.me
 DOMAIN-SUFFIX,igcdn.com
 DOMAIN-SUFFIX,igsonar.com
 DOMAIN-SUFFIX,igtv.com
-DOMAIN-SUFFIX,accountkit.com
 
-# Подсети Meta (AS32934, IPv4)
-IP-CIDR,31.13.24.0/21,no-resolve
-IP-CIDR,31.13.64.0/18,no-resolve
-IP-CIDR,45.64.40.0/22,no-resolve
-IP-CIDR,57.141.0.0/21,no-resolve
-IP-CIDR,57.141.8.0/22,no-resolve
-IP-CIDR,57.141.12.0/23,no-resolve
-IP-CIDR,57.144.0.0/14,no-resolve
-IP-CIDR,66.220.144.0/20,no-resolve
-IP-CIDR,69.63.176.0/20,no-resolve
-IP-CIDR,69.171.224.0/19,no-resolve
-IP-CIDR,74.119.76.0/22,no-resolve
-IP-CIDR,102.132.96.0/20,no-resolve
-IP-CIDR,103.4.96.0/22,no-resolve
-IP-CIDR,129.134.0.0/17,no-resolve
-IP-CIDR,157.240.0.0/17,no-resolve
-IP-CIDR,157.240.192.0/18,no-resolve
-IP-CIDR,163.70.128.0/17,no-resolve
-IP-CIDR,173.252.64.0/19,no-resolve
-IP-CIDR,173.252.96.0/19,no-resolve
-IP-CIDR,179.60.192.0/22,no-resolve
-IP-CIDR,185.60.216.0/22,no-resolve
+# Meta backbone
+IP-ASN,32934
+# IP-CIDR6,2a03:2880::/32
 
+# Подсети Meta (IPv4)
+# ВАЖНО: без no-resolve, чтобы Shadowrocket мог сматчить доменные запросы по итоговому IP Meta
+IP-CIDR,31.13.24.0/21
+IP-CIDR,31.13.64.0/18
+IP-CIDR,45.64.40.0/22
+IP-CIDR,57.141.0.0/21
+IP-CIDR,57.141.8.0/22
+IP-CIDR,57.141.12.0/23
+IP-CIDR,57.144.0.0/14
+IP-CIDR,66.220.144.0/20
+IP-CIDR,69.63.176.0/20
+IP-CIDR,69.171.224.0/19
+IP-CIDR,74.119.76.0/22
+IP-CIDR,102.132.96.0/20
+IP-CIDR,103.4.96.0/22
+IP-CIDR,129.134.0.0/17
+IP-CIDR,157.240.0.0/17
+IP-CIDR,157.240.192.0/18
+IP-CIDR,163.70.128.0/17
+IP-CIDR,173.252.64.0/19
+IP-CIDR,173.252.96.0/19
+IP-CIDR,179.60.192.0/22
+IP-CIDR,185.60.216.0/22
 
 ################################
 # SPOTIFY
@@ -320,7 +349,6 @@ IP-CIDR,185.60.216.0/22,no-resolve
 DOMAIN-KEYWORD,spotify
 DOMAIN-SUFFIX,scdn.co
 DOMAIN-SUFFIX,pscdn.co
-
 
 ################################
 # PORNHUB
@@ -343,14 +371,12 @@ DOMAIN-SUFFIX,azurefd.net
 DOMAIN-SUFFIX,azureedge.net
 DOMAIN-SUFFIX,blob.core.windows.net
 
-
 ################################
 # PROTON
 ################################
 
 DOMAIN-KEYWORD,proton
 DOMAIN-SUFFIX,pm.me
-
 
 ################################
 # TIDAL
@@ -360,14 +386,12 @@ DOMAIN-SUFFIX,tidal.com
 DOMAIN-SUFFIX,tidalhi.fi
 DOMAIN-SUFFIX,tidalhifi.com
 
-
 ################################
 # GROK (xAI)
 ################################
 
 DOMAIN-SUFFIX,grok.com
 DOMAIN-SUFFIX,x.ai
-
 
 ################################
 # SPEEDTEST
@@ -390,12 +414,16 @@ DOMAIN-SUFFIX,speed.dler.io
 DOMAIN-SUFFIX,cachefly.net
 DOMAIN-SUFFIX,uwn.com
 
-
 ################################
 # DISCORD (iOS) — веб, API, веб-сокет, медиа/CDN, голос
 ################################
 
-DOMAIN-KEYWORD,discord
+DOMAIN-SUFFIX,discord.com
+DOMAIN-SUFFIX,discord.gg
+DOMAIN-SUFFIX,discordapp.com
+DOMAIN-SUFFIX,discordapp.net
+DOMAIN-SUFFIX,discord.media
+DOMAIN-SUFFIX,discordcdn.com
 DOMAIN-SUFFIX,dis.gd
 DOMAIN,discord-attachments-uploads-prd.storage.googleapis.com
 DOMAIN,hammerandchisel.ssl.zendesk.com
@@ -403,14 +431,12 @@ DOMAIN,hammerandchisel.ssl.zendesk.com
 # Подсети Discord для голосовых серверов (RTP/UDP)
 IP-CIDR,66.22.192.0/18,no-resolve
 
-
 ################################
 # Диагностика/проверка IP
 ################################
 
 DOMAIN-SUFFIX,2ip.io
 DOMAIN-SUFFIX,browserleaks.com
-
 
 ################################
 # Трекеры/торренты/прочее (точечные домены)
@@ -423,7 +449,6 @@ DOMAIN-SUFFIX,rutor.info
 DOMAIN-SUFFIX,kinozal.tv
 DOMAIN-SUFFIX,news.google.com
 DOMAIN-SUFFIX,microsoft.com
-
 
 ################################
 # APPLE FACETIME (звонки / видео / экран)
