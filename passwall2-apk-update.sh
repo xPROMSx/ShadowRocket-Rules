@@ -8,7 +8,7 @@ set -eu
 # - fresh install if PassWall2 is absent
 # - upgrade if GitHub/custom latest is newer
 # - skip if same version is already installed
-# - optional reinstall of same version
+# - optional run of install flow even when versions match
 #
 # Optional env overrides:
 #   ARCH=aarch64_cortex-a53
@@ -16,7 +16,7 @@ set -eu
 #   API_URL=https://api.github.com/repos/.../releases/latest
 #   BASE_URL=https://github.com/.../releases/download
 #   LATEST_URL=https://your.domain/passwall2/latest.txt
-#   FORCE_REINSTALL=1   # force reinstall when versions match
+#   FORCE_REINSTALL=1   # run install flow even when versions match
 # =========================================================
 
 ARCH="${ARCH:-aarch64_cortex-a53}"
@@ -109,9 +109,6 @@ print_summary() {
       _status="MISSING"
     elif [ "$_before" = "$_after" ]; then
       case "$ACTION" in
-        "REINSTALL SAME")
-          _status="REINSTALLED"
-          ;;
         "SKIP SAME")
           _status="SKIPPED"
           ;;
@@ -156,7 +153,7 @@ snapshot_versions "$BEFORE_FILE"
 
 echo "[5/10] Detect latest PassWall2 release..."
 if [ -n "$LATEST_URL" ]; then
-  TAG="$(wget -qO- "$LATEST_URL" | tr -d '\r\n[:space:]')"
+  TAG="$(wget -qO- "$LATEST_URL" | head -n1 | tr -d '\r\n')"
   SOURCE_DESC="Custom latest URL"
 else
   JSON="$(wget -qO- "$API_URL" | tr -d '\n')"
@@ -172,6 +169,7 @@ echo "Latest tag : $TAG"
 echo "APK ver    : $APK_VER"
 echo "Arch       : $ARCH"
 
+# Compare ONLY the main PassWall2 package version.
 INSTALLED_MAIN="$(installed_ver luci-app-passwall2 || true)"
 
 if [ -z "${INSTALLED_MAIN:-}" ] || [ "$INSTALLED_MAIN" = "-" ]; then
@@ -187,19 +185,19 @@ else
       ;;
     '=')
       if [ "$FORCE_REINSTALL" = "1" ]; then
-        ACTION="REINSTALL SAME"
-        ACTION_NOTE="Versions matched, but reinstall was forced via FORCE_REINSTALL=1."
+        ACTION="RUN SAME VERSION FLOW"
+        ACTION_NOTE="Versions matched; install flow was forced by FORCE_REINSTALL=1."
       else
         if [ -t 0 ]; then
           echo
           echo "Installed PassWall2 version : $INSTALLED_MAIN"
           echo "Latest available version    : $APK_VER"
-          printf "Versions match. Reinstall same version anyway? [y/N]: "
+          printf "Versions match. Run install flow anyway? [y/N]: "
           read -r ANSWER
           case "${ANSWER:-N}" in
             y|Y|yes|YES)
-              ACTION="REINSTALL SAME"
-              ACTION_NOTE="Versions matched; reinstall was confirmed by user."
+              ACTION="RUN SAME VERSION FLOW"
+              ACTION_NOTE="Versions matched; install flow was confirmed by user."
               ;;
             *)
               ACTION="SKIP SAME"
@@ -211,7 +209,7 @@ else
           esac
         else
           ACTION="SKIP SAME"
-          ACTION_NOTE="Latest version is already installed; non-interactive run skipped reinstall."
+          ACTION_NOTE="Latest version is already installed; non-interactive run skipped install flow."
           cp "$BEFORE_FILE" "$AFTER_FILE"
           print_summary
           exit 0
