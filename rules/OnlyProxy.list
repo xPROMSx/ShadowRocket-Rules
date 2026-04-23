@@ -1,13 +1,12 @@
 # # NAME: category-proxy
 # DESC: сервисы, которые должны идти через PROXY (мессенджеры/видео/соцсети/диагностика/Cloudflare)
 # AUTHOR: Proms
-# UPDATED: 2026-04-09
+# UPDATED: 2026-04-23
 
 ################################
-# Telegram — ВЕСЬ трафик через прокси (TCP+UDP)
+# Telegram
 ################################
 
-# Домены
 DOMAIN,api.imem.app
 DOMAIN,api.swiftgram.app
 DOMAIN-SUFFIX,cdn-telegram.org
@@ -34,28 +33,10 @@ DOMAIN-SUFFIX,tx.me
 DOMAIN-SUFFIX,usercontent.dev
 DOMAIN-KEYWORD,nicegram
 
-# IP / ASN
-IP-CIDR,109.239.140.0/24
-IP-CIDR,139.59.210.98/32
-IP-CIDR,149.154.160.0/20
-IP-CIDR,196.55.216.167/32
-IP-CIDR,2001:67c:4e8::/48
-IP-CIDR,2001:b28:f23c::/47
-IP-CIDR,2001:b28:f23f::/48
-IP-CIDR,2a0a:f280::/29
-IP-CIDR,5.28.192.0/18
-IP-CIDR,91.108.0.0/16
-IP-ASN,211157
-IP-ASN,44907
-IP-ASN,59930
-IP-ASN,62014
-IP-ASN,62041
-
 ################################
-# WhatsApp — ВЕСЬ трафик через прокси (TCP+UDP)
+# WhatsApp
 ################################
 
-# Основные домены WhatsApp
 DOMAIN-SUFFIX,whatsapp.com
 DOMAIN-SUFFIX,whatsapp.net
 DOMAIN-SUFFIX,wa.me
@@ -65,27 +46,11 @@ DOMAIN-SUFFIX,meta.vc
 DOMAIN,graph.facebook.com
 DOMAIN-KEYWORD,whatsapp
 
-# Fallback IP ranges
-IP-CIDR,158.85.224.160/27,no-resolve
-IP-CIDR,158.85.46.128/27,no-resolve
-IP-CIDR,158.85.5.192/27,no-resolve
-IP-CIDR,173.192.222.160/27,no-resolve
-IP-CIDR,173.192.231.32/27,no-resolve
-IP-CIDR,18.194.0.0/15,no-resolve
-IP-CIDR,184.173.128.0/17,no-resolve
-IP-CIDR,208.43.122.128/27,no-resolve
-IP-CIDR,34.224.0.0/12,no-resolve
-IP-CIDR,50.22.198.204/30,no-resolve
-IP-CIDR,54.242.0.0/15,no-resolve
-
 ################################
-# CLOUDFLARE (домены + официальные подсети)
+# CLOUDFLARE
 ################################
 
-# Основные branded-домены
 DOMAIN-KEYWORD,cloudflare
-
-# Актуальные продуктовые домены
 DOMAIN-SUFFIX,argotunnel.com
 DOMAIN-SUFFIX,browser.run
 DOMAIN-SUFFIX,cfargotunnel.com
@@ -140,38 +105,10 @@ DOMAIN-SUFFIX,videodelivery.net
 DOMAIN-SUFFIX,warp.plus
 DOMAIN-SUFFIX,workers.dev
 
-# Официальные подсети Cloudflare (IPv4)
-IP-CIDR,173.245.48.0/20
-IP-CIDR,103.21.244.0/22
-IP-CIDR,103.22.200.0/22
-IP-CIDR,103.31.4.0/22
-IP-CIDR,141.101.64.0/18
-IP-CIDR,108.162.192.0/18
-IP-CIDR,190.93.240.0/20
-IP-CIDR,188.114.96.0/20
-IP-CIDR,197.234.240.0/22
-IP-CIDR,198.41.128.0/17
-IP-CIDR,162.158.0.0/15
-IP-CIDR,104.16.0.0/13
-IP-CIDR,104.24.0.0/14
-IP-CIDR,172.64.0.0/13
-IP-CIDR,131.0.72.0/22
-
-# Официальные подсети Cloudflare (IPv6)
-IP-CIDR,2400:cb00::/32
-IP-CIDR,2606:4700::/32
-IP-CIDR,2803:f800::/32
-IP-CIDR,2405:b500::/32
-IP-CIDR,2405:8100::/32
-IP-CIDR,2a06:98c0::/29
-IP-CIDR,2c0f:f248::/32
-
-
 ################################
 # OPENAI / CHATGPT
 ################################
 
-# Основные домены
 DOMAIN-KEYWORD,openai
 DOMAIN-SUFFIX,openai.com
 DOMAIN-SUFFIX,chatgpt.com
@@ -182,7 +119,6 @@ DOMAIN-SUFFIX,crixet.com
 DOMAIN-SUFFIX,sora.com
 DOMAIN-SUFFIX,ai.com
 
-# CDN / API / media
 DOMAIN,openai.com.cdn.cloudflare.net
 DOMAIN,openaicom-api-bdcpf8c6d2e9atf6.z01.azurefd.net
 DOMAIN,openaicomproductionae4b.blob.core.windows.net
@@ -196,7 +132,6 @@ DOMAIN-SUFFIX,chatgpt.livekit.cloud
 DOMAIN-SUFFIX,host.livekit.cloud
 DOMAIN-SUFFIX,turn.livekit.cloud
 
-# Зависимости
 DOMAIN-SUFFIX,algolia.net
 DOMAIN-SUFFIX,api.statsig.com
 DOMAIN-SUFFIX,statsig.com
@@ -214,13 +149,8 @@ DOMAIN-SUFFIX,sentry.io
 DOMAIN-SUFFIX,hcaptcha.com
 DOMAIN-SUFFIX,stripe.com
 
-# IP / ASN
-IP-CIDR,24.199.123.28/32
-IP-CIDR,64.23.132.171/32
-IP-ASN,20473
-
 ################################
-# GOOGLE DEEPMIND / GOOGLE AI (Gemini/AI Studio и др.)
+# GOOGLE DEEPMIND / GOOGLE AI
 ################################
 
 DOMAIN-SUFFIX,deepmind.com
@@ -240,7 +170,7 @@ DOMAIN,aisandbox-pa.googleapis.com
 DOMAIN-SUFFIX,clients6.google.com
 
 ################################
-# YOUTUBE (видео/статические/CDN/API)
+# YOUTUBE
 ################################
 
 DOMAIN-KEYWORD,youtube
@@ -278,7 +208,6 @@ DOMAIN,tellapart.com
 DOMAIN-SUFFIX,vine.co
 DOMAIN-SUFFIX,cms-twdigitalassets.com
 
-
 ################################
 # TWITCH
 ################################
@@ -287,7 +216,6 @@ DOMAIN-KEYWORD,twitch
 DOMAIN-SUFFIX,ttvnw.net
 DOMAIN-SUFFIX,jtvnw.net
 DOMAIN-SUFFIX,live-video.net
-
 DOMAIN,d1g1f25tn8m2e6.cloudfront.net
 DOMAIN,d1m7jfoe9zdc1j.cloudfront.net
 DOMAIN,d1mhjrowxxagfy.cloudfront.net
@@ -315,11 +243,9 @@ DOMAIN,ds0h3roq6wcgc.cloudfront.net
 DOMAIN,dykkng5hnh52u.cloudfront.net
 
 ################################
-# META (Facebook/Instagram/Messenger/Threads/Oculus)
-# WhatsApp покрыт выше отдельно, но Meta backbone нужен и для него тоже
+# META
 ################################
 
-# Основные домены сервисов Meta
 DOMAIN-SUFFIX,facebook.com
 DOMAIN-SUFFIX,messenger.com
 DOMAIN-SUFFIX,instagram.com
@@ -334,7 +260,6 @@ DOMAIN-SUFFIX,oculusvr.com
 DOMAIN-SUFFIX,workplace.com
 DOMAIN-SUFFIX,accountkit.com
 
-# CDN / short / attachments
 DOMAIN-SUFFIX,fb.com
 DOMAIN-SUFFIX,fb.me
 DOMAIN-SUFFIX,fb.gg
@@ -349,34 +274,6 @@ DOMAIN,ig.me
 DOMAIN-SUFFIX,igcdn.com
 DOMAIN-SUFFIX,igsonar.com
 DOMAIN-SUFFIX,igtv.com
-
-# Meta ASN / IPv6
-IP-ASN,32934
-IP-CIDR,2a03:2880::/32
-
-# Meta IPv4 ranges
-IP-CIDR,31.13.24.0/21
-IP-CIDR,31.13.64.0/18
-IP-CIDR,45.64.40.0/22
-IP-CIDR,57.141.0.0/21
-IP-CIDR,57.141.8.0/22
-IP-CIDR,57.141.12.0/23
-IP-CIDR,57.144.0.0/14
-IP-CIDR,66.220.144.0/20
-IP-CIDR,69.63.176.0/20
-IP-CIDR,69.171.224.0/19
-IP-CIDR,74.119.76.0/22
-IP-CIDR,102.132.96.0/20
-IP-CIDR,103.4.96.0/22
-IP-CIDR,129.134.0.0/17
-IP-CIDR,157.240.0.0/17
-IP-CIDR,157.240.192.0/18
-IP-CIDR,163.70.128.0/17
-IP-CIDR,173.252.64.0/19
-IP-CIDR,173.252.96.0/19
-IP-CIDR,179.60.192.0/22
-IP-CIDR,185.60.216.0/22
-
 
 ################################
 # SPOTIFY
@@ -405,7 +302,6 @@ DOMAIN-SUFFIX,bingapis.com
 DOMAIN-SUFFIX,azurefd.net
 DOMAIN-SUFFIX,azureedge.net
 DOMAIN-SUFFIX,blob.core.windows.net
-
 
 ################################
 # PROTON
@@ -448,7 +344,7 @@ DOMAIN-SUFFIX,cachefly.net
 DOMAIN-SUFFIX,uwn.com
 
 ################################
-# DISCORD (iOS) — веб, API, веб-сокет, медиа/CDN, голос
+# DISCORD (iOS)
 ################################
 
 DOMAIN-SUFFIX,airhorn.solutions
@@ -481,18 +377,15 @@ DOMAIN-SUFFIX,discordstatus.com
 DOMAIN-SUFFIX,hammerandchisel.ssl.zendesk.com
 DOMAIN-SUFFIX,watchanimeattheoffice.com
 
-# Подсети Discord для голосовых серверов
-IP-CIDR,66.22.192.0/18
-
 ################################
-# Диагностика/проверка IP
+# Диагностика / проверка IP
 ################################
 
 DOMAIN-SUFFIX,2ip.io
 DOMAIN-SUFFIX,browserleaks.com
 
 ################################
-# Трекеры/торренты/прочее (точечные домены)
+# Трекеры / торренты / прочее
 ################################
 
 DOMAIN-SUFFIX,rutracker.org
@@ -504,19 +397,106 @@ DOMAIN-SUFFIX,news.google.com
 DOMAIN-SUFFIX,microsoft.com
 
 ################################
-# APPLE FACETIME (звонки / видео / экран)
+# APPLE FACETIME
 ################################
 
-# 1) Сигнализация FaceTime
 DOMAIN,facetime.apple.com
 DOMAIN,facetime-apple-com.we.apple-dns.net
 
-# 2) Медиа-канал FaceTime (звук/видео RTP, STUN/TURN)
 AND,((IP-CIDR,17.0.0.0/8),(PROTOCOL,UDP),(DST-PORT,3478-3497))
 AND,((IP-CIDR,17.0.0.0/8),(PROTOCOL,UDP),(DST-PORT,16384-16387))
 AND,((IP-CIDR,17.0.0.0/8),(PROTOCOL,UDP),(DST-PORT,16393-16402))
 AND,((IP-CIDR,17.0.0.0/8),(PROTOCOL,UDP),(DST-PORT,16403-16472))
 
-# 3) Пуш-уведомления Apple (APNs, входящий звонок и уведомления)
-# AND,((IP-CIDR,17.0.0.0/8),(PROTOCOL,TCP),(DST-PORT,5223))
-# AND,((IP-CIDR,17.0.0.0/8),(PROTOCOL,TCP),(DST-PORT,443))
+################################
+# IP / ASN fallback block
+################################
+
+# Telegram
+IP-CIDR,109.239.140.0/24,no-resolve
+IP-CIDR,139.59.210.98/32,no-resolve
+IP-CIDR,149.154.160.0/20,no-resolve
+IP-CIDR,196.55.216.167/32,no-resolve
+IP-CIDR,2001:67c:4e8::/48,no-resolve
+IP-CIDR,2001:b28:f23c::/47,no-resolve
+IP-CIDR,2001:b28:f23f::/48,no-resolve
+IP-CIDR,2a0a:f280::/29,no-resolve
+IP-CIDR,5.28.192.0/18,no-resolve
+IP-CIDR,91.108.0.0/16,no-resolve
+IP-ASN,211157,no-resolve
+IP-ASN,44907,no-resolve
+IP-ASN,59930,no-resolve
+IP-ASN,62014,no-resolve
+IP-ASN,62041,no-resolve
+
+# WhatsApp
+IP-CIDR,158.85.224.160/27,no-resolve
+IP-CIDR,158.85.46.128/27,no-resolve
+IP-CIDR,158.85.5.192/27,no-resolve
+IP-CIDR,173.192.222.160/27,no-resolve
+IP-CIDR,173.192.231.32/27,no-resolve
+IP-CIDR,18.194.0.0/15,no-resolve
+IP-CIDR,184.173.128.0/17,no-resolve
+IP-CIDR,208.43.122.128/27,no-resolve
+IP-CIDR,34.224.0.0/12,no-resolve
+IP-CIDR,50.22.198.204/30,no-resolve
+IP-CIDR,54.242.0.0/15,no-resolve
+
+# Cloudflare IPv4
+IP-CIDR,173.245.48.0/20,no-resolve
+IP-CIDR,103.21.244.0/22,no-resolve
+IP-CIDR,103.22.200.0/22,no-resolve
+IP-CIDR,103.31.4.0/22,no-resolve
+IP-CIDR,141.101.64.0/18,no-resolve
+IP-CIDR,108.162.192.0/18,no-resolve
+IP-CIDR,190.93.240.0/20,no-resolve
+IP-CIDR,188.114.96.0/20,no-resolve
+IP-CIDR,197.234.240.0/22,no-resolve
+IP-CIDR,198.41.128.0/17,no-resolve
+IP-CIDR,162.158.0.0/15,no-resolve
+IP-CIDR,104.16.0.0/13,no-resolve
+IP-CIDR,104.24.0.0/14,no-resolve
+IP-CIDR,172.64.0.0/13,no-resolve
+IP-CIDR,131.0.72.0/22,no-resolve
+
+# Cloudflare IPv6
+IP-CIDR,2400:cb00::/32,no-resolve
+IP-CIDR,2606:4700::/32,no-resolve
+IP-CIDR,2803:f800::/32,no-resolve
+IP-CIDR,2405:b500::/32,no-resolve
+IP-CIDR,2405:8100::/32,no-resolve
+IP-CIDR,2a06:98c0::/29,no-resolve
+IP-CIDR,2c0f:f248::/32,no-resolve
+
+# OpenAI
+IP-CIDR,24.199.123.28/32,no-resolve
+IP-CIDR,64.23.132.171/32,no-resolve
+IP-ASN,20473,no-resolve
+
+# Meta
+IP-ASN,32934,no-resolve
+IP-CIDR,2a03:2880::/32,no-resolve
+IP-CIDR,31.13.24.0/21,no-resolve
+IP-CIDR,31.13.64.0/18,no-resolve
+IP-CIDR,45.64.40.0/22,no-resolve
+IP-CIDR,57.141.0.0/21,no-resolve
+IP-CIDR,57.141.8.0/22,no-resolve
+IP-CIDR,57.141.12.0/23,no-resolve
+IP-CIDR,57.144.0.0/14,no-resolve
+IP-CIDR,66.220.144.0/20,no-resolve
+IP-CIDR,69.63.176.0/20,no-resolve
+IP-CIDR,69.171.224.0/19,no-resolve
+IP-CIDR,74.119.76.0/22,no-resolve
+IP-CIDR,102.132.96.0/20,no-resolve
+IP-CIDR,103.4.96.0/22,no-resolve
+IP-CIDR,129.134.0.0/17,no-resolve
+IP-CIDR,157.240.0.0/17,no-resolve
+IP-CIDR,157.240.192.0/18,no-resolve
+IP-CIDR,163.70.128.0/17,no-resolve
+IP-CIDR,173.252.64.0/19,no-resolve
+IP-CIDR,173.252.96.0/19,no-resolve
+IP-CIDR,179.60.192.0/22,no-resolve
+IP-CIDR,185.60.216.0/22,no-resolve
+
+# Discord voice
+IP-CIDR,66.22.192.0/18,no-resolve
