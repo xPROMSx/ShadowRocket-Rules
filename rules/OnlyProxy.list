@@ -109,45 +109,41 @@ DOMAIN-SUFFIX,workers.dev
 # OPENAI / CHATGPT
 ################################
 
-DOMAIN-KEYWORD,openai
-DOMAIN-SUFFIX,openai.com
-DOMAIN-SUFFIX,chatgpt.com
-DOMAIN-SUFFIX,chat.com
-DOMAIN-SUFFIX,oaistatic.com
-DOMAIN-SUFFIX,oaiusercontent.com
-DOMAIN-SUFFIX,crixet.com
-DOMAIN-SUFFIX,sora.com
-DOMAIN-SUFFIX,ai.com
-
-DOMAIN,openai.com.cdn.cloudflare.net
+DOMAIN,browser-intake-datadoghq.com
+DOMAIN,chat.openai.com.cdn.cloudflare.net
+DOMAIN,openai-api.arkoselabs.com
 DOMAIN,openaicom-api-bdcpf8c6d2e9atf6.z01.azurefd.net
 DOMAIN,openaicomproductionae4b.blob.core.windows.net
 DOMAIN,production-openaicom-storage.azureedge.net
-DOMAIN,openai-api.arkoselabs.com
-DOMAIN,browser-intake-datadoghq.com
-DOMAIN,js.stripe.com
-DOMAIN-SUFFIX,openaiapi-site.azureedge.net
-DOMAIN-SUFFIX,openaicom.imgix.net
-DOMAIN-SUFFIX,chatgpt.livekit.cloud
-DOMAIN-SUFFIX,host.livekit.cloud
-DOMAIN-SUFFIX,turn.livekit.cloud
+DOMAIN,static.cloudflareinsights.com
 
+DOMAIN-SUFFIX,ai.com
 DOMAIN-SUFFIX,algolia.net
 DOMAIN-SUFFIX,api.statsig.com
-DOMAIN-SUFFIX,statsig.com
-DOMAIN-SUFFIX,events.statsigapi.net
-DOMAIN-SUFFIX,statsigapi.net
 DOMAIN-SUFFIX,auth0.com
+DOMAIN-SUFFIX,chat.com
+DOMAIN-SUFFIX,chatgpt.com
+DOMAIN-SUFFIX,chatgpt.livekit.cloud
 DOMAIN-SUFFIX,client-api.arkoselabs.com
+DOMAIN-SUFFIX,events.statsigapi.net
 DOMAIN-SUFFIX,featuregates.org
-DOMAIN-SUFFIX,featureassets.org
+DOMAIN-SUFFIX,host.livekit.cloud
+DOMAIN-SUFFIX,identrust.com
 DOMAIN-SUFFIX,intercom.io
 DOMAIN-SUFFIX,intercomcdn.com
 DOMAIN-SUFFIX,launchdarkly.com
+DOMAIN-SUFFIX,oaistatic.com
+DOMAIN-SUFFIX,oaiusercontent.com
+DOMAIN-SUFFIX,observeit.net
+DOMAIN-SUFFIX,openai.com
+DOMAIN-SUFFIX,openaiapi-site.azureedge.net
+DOMAIN-SUFFIX,openaicom.imgix.net
 DOMAIN-SUFFIX,segment.io
 DOMAIN-SUFFIX,sentry.io
-DOMAIN-SUFFIX,hcaptcha.com
+DOMAIN-SUFFIX,sora.com
 DOMAIN-SUFFIX,stripe.com
+DOMAIN-SUFFIX,turn.livekit.cloud
+DOMAIN-KEYWORD,openai
 
 ################################
 # GOOGLE DEEPMIND / GOOGLE AI
@@ -383,6 +379,7 @@ DOMAIN-SUFFIX,watchanimeattheoffice.com
 
 DOMAIN-SUFFIX,2ip.io
 DOMAIN-SUFFIX,browserleaks.com
+DOMAIN-SUFFIX,news.google.com
 
 ################################
 # Трекеры / торренты / прочее
@@ -393,8 +390,6 @@ DOMAIN-SUFFIX,nnmclub.to
 DOMAIN-SUFFIX,rutor.is
 DOMAIN-SUFFIX,rutor.info
 DOMAIN-SUFFIX,kinozal.tv
-DOMAIN-SUFFIX,news.google.com
-DOMAIN-SUFFIX,microsoft.com
 
 ################################
 # APPLE FACETIME
@@ -429,17 +424,19 @@ IP-ASN,59930,no-resolve
 IP-ASN,62014,no-resolve
 IP-ASN,62041,no-resolve
 
-# WhatsApp
-IP-CIDR,158.85.224.160/27,no-resolve
-IP-CIDR,158.85.46.128/27,no-resolve
-IP-CIDR,158.85.5.192/27,no-resolve
-IP-CIDR,173.192.222.160/27,no-resolve
-IP-CIDR,173.192.231.32/27,no-resolve
+# WhatsApp: узкие fallback IP — без no-resolve, чтобы ловить пропущенные hostname
+IP-CIDR,158.85.224.160/27
+IP-CIDR,158.85.46.128/27
+IP-CIDR,158.85.5.192/27
+IP-CIDR,173.192.222.160/27
+IP-CIDR,173.192.231.32/27
+IP-CIDR,208.43.122.128/27
+IP-CIDR,50.22.198.204/30
+
+# WhatsApp: широкие third-party fallback сети — с no-resolve
 IP-CIDR,18.194.0.0/15,no-resolve
 IP-CIDR,184.173.128.0/17,no-resolve
-IP-CIDR,208.43.122.128/27,no-resolve
 IP-CIDR,34.224.0.0/12,no-resolve
-IP-CIDR,50.22.198.204/30,no-resolve
 IP-CIDR,54.242.0.0/15,no-resolve
 
 # Cloudflare IPv4
@@ -473,30 +470,30 @@ IP-CIDR,24.199.123.28/32,no-resolve
 IP-CIDR,64.23.132.171/32,no-resolve
 IP-ASN,20473,no-resolve
 
-# Meta
-IP-ASN,32934,no-resolve
-IP-CIDR,2a03:2880::/32,no-resolve
-IP-CIDR,31.13.24.0/21,no-resolve
-IP-CIDR,31.13.64.0/18,no-resolve
-IP-CIDR,45.64.40.0/22,no-resolve
-IP-CIDR,57.141.0.0/21,no-resolve
-IP-CIDR,57.141.8.0/22,no-resolve
-IP-CIDR,57.141.12.0/23,no-resolve
-IP-CIDR,57.144.0.0/14,no-resolve
-IP-CIDR,66.220.144.0/20,no-resolve
-IP-CIDR,69.63.176.0/20,no-resolve
-IP-CIDR,69.171.224.0/19,no-resolve
-IP-CIDR,74.119.76.0/22,no-resolve
-IP-CIDR,102.132.96.0/20,no-resolve
-IP-CIDR,103.4.96.0/22,no-resolve
-IP-CIDR,129.134.0.0/17,no-resolve
-IP-CIDR,157.240.0.0/17,no-resolve
-IP-CIDR,157.240.192.0/18,no-resolve
-IP-CIDR,163.70.128.0/17,no-resolve
-IP-CIDR,173.252.64.0/19,no-resolve
-IP-CIDR,173.252.96.0/19,no-resolve
-IP-CIDR,179.60.192.0/22,no-resolve
-IP-CIDR,185.60.216.0/22,no-resolve
+# Meta: без no-resolve, чтобы лучше подхватывать пропущенные Meta/WhatsApp hostname
+IP-ASN,32934
+IP-CIDR,2a03:2880::/32
+IP-CIDR,31.13.24.0/21
+IP-CIDR,31.13.64.0/18
+IP-CIDR,45.64.40.0/22
+IP-CIDR,57.141.0.0/21
+IP-CIDR,57.141.8.0/22
+IP-CIDR,57.141.12.0/23
+IP-CIDR,57.144.0.0/14
+IP-CIDR,66.220.144.0/20
+IP-CIDR,69.63.176.0/20
+IP-CIDR,69.171.224.0/19
+IP-CIDR,74.119.76.0/22
+IP-CIDR,102.132.96.0/20
+IP-CIDR,103.4.96.0/22
+IP-CIDR,129.134.0.0/17
+IP-CIDR,157.240.0.0/17
+IP-CIDR,157.240.192.0/18
+IP-CIDR,163.70.128.0/17
+IP-CIDR,173.252.64.0/19
+IP-CIDR,173.252.96.0/19
+IP-CIDR,179.60.192.0/22
+IP-CIDR,185.60.216.0/22
 
 # Discord voice
 IP-CIDR,66.22.192.0/18,no-resolve
