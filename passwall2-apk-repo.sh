@@ -1,7 +1,4 @@
 #!/bin/sh
-# PassWall2 APK repository manager for OpenWrt 25.12+
-# Default network order: direct connection first, then local HTTP/mixed proxy.
-# No language packs, no RU geodata, no config backups, no sysupgrade changes.
 
 set -u
 
