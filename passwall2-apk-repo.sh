@@ -1,578 +1,1192 @@
 #!/bin/sh
-# PassWall2 APK repository manager for OpenWrt 25.12+
-# Default network order: direct connection first, then local HTTP/mixed proxy.
-# No language packs, no RU geodata, no config backups, no sysupgrade changes.
-
 set -u
 
-SCRIPT_VERSION="1.0.0"
-APP_PKG="luci-app-passwall2"
-MINIMAL_RUNTIME_PKGS="xray-core hysteria geoview tcping v2ray-geoip v2ray-geosite"
-PROXY_URL="${PW2_PROXY_URL:-http://192.168.1.11:1088}"
+# PassWall2 APK manager for OpenWrt 25.12+
+# Modes:
+#   status                 local diagnostics; no network changes
+#   setup                  add/repair signed PassWall2 APK repository
+#   check                  refresh indexes and show available updates
+#   update                 update ONLY luci-app-passwall2 from signed repository
+#   install                install minimal stack: PassWall2 + Xray + Hysteria
+#   github TAG [luci|minimal]
+#                          emergency manual install/rollback from GitHub release
+#
+# Examples:
+#   sh /root/passwall2-apk-repo.sh check
+#   sh /root/passwall2-apk-repo.sh update
+#   sh /root/passwall2-apk-repo.sh install
+#   sh /root/passwall2-apk-repo.sh github 26.6.3-1 luci
+#
+# Optional override:
+#   PROXY="http://192.168.1.11:1088" sh /root/passwall2-apk-repo.sh check
 
-KEY_URL="https://master.dl.sourceforge.net/project/openwrt-passwall-build/apk.pub"
-KEY_FILE="/etc/apk/keys/openwrt-passwall-build.pem"
+SCRIPT_VERSION="2.0.0"
+MAIN_PKG="luci-app-passwall2"
+MINIMAL_PKGS="luci-app-passwall2 xray-core hysteria"
+DISPLAY_PKGS="luci-app-passwall2 xray-core hysteria geoview tcping v2ray-geoip v2ray-geosite"
+PROXY="${PROXY:-http://192.168.1.11:1088}"
 REPO_FILE="/etc/apk/repositories.d/passwall2.list"
-SF_BASE="https://master.dl.sourceforge.net/project/openwrt-passwall-build"
-GH_REPO="Openwrt-Passwall/openwrt-passwall2"
-GH_BASE="https://github.com/${GH_REPO}/releases/download"
+KEY_FILE="/etc/apk/keys/openwrt-passwall-build.pem"
+KEY_URL="https://master.dl.sourceforge.net/project/openwrt-passwall-build/apk.pub"
+GITHUB_REPO="Openwrt-Passwall/openwrt-passwall2"
+TMP_ROOT=""
 
-log()  { printf '%s\n' "[INFO] $*"; }
-warn() { printf '%s\n' "[WARN] $*" >&2; }
-die()  { printf '%s\n' "[ERROR] $*" >&2; exit 1; }
+line() { printf '%s\n' '============================================================'; }
+subline() { printf '%s\n' '------------------------------------------------------------'; }
+info() { printf '[INFO] %s\n' "$*"; }
+warn() { printf '[WARN] %s\n' "$*" >&2; }
+die() { printf '[ERROR] %s\n' "$*" >&2; exit 1; }
 
-usage() {
-cat <<'USAGE'
-PassWall2 APK manager
-
-Usage:
-  sh passwall2-apk-repo.sh status
-      Local diagnostics. Does not access the network and changes nothing.
-
-  sh passwall2-apk-repo.sh setup
-      Add or repair the signed PassWall2 APK repository and signing key.
-
-  sh passwall2-apk-repo.sh check
-      Refresh indexes and show installed/available versions and updates.
-
-  sh passwall2-apk-repo.sh update
-      Safely update only luci-app-passwall2 from the signed repository.
-      Runtime cores are not explicitly requested for upgrade; APK may adjust
-      a dependency only if the new PassWall2 package requires it.
-
-  sh passwall2-apk-repo.sh install
-      Fresh/recovery install of the minimal stack:
-      luci-app-passwall2, xray-core, hysteria, geoview, tcping,
-      v2ray-geoip and v2ray-geosite.
-      Use this after Attended Sysupgrade when PassWall2 was excluded
-      from the firmware image but configuration was kept.
-
-  sh passwall2-apk-repo.sh github TAG [luci|minimal]
-      Emergency install/rollback to a specific official GitHub release.
-      Example:
-        sh passwall2-apk-repo.sh github 26.6.3-1 luci
-        sh passwall2-apk-repo.sh github 26.6.3-1 minimal
-      This mode installs local upstream APK files with --allow-untrusted.
-      Prefer the signed repository for normal installation and updates.
-
-Environment variables:
-  PW2_PROXY_URL=http://192.168.1.11:1088
-      Fallback proxy. Direct access is always attempted first.
-
-  ASSUME_YES=1
-      Skip interactive confirmations.
-USAGE
+cleanup() {
+    [ -n "${TMP_ROOT:-}" ] && rm -rf "$TMP_ROOT"
 }
 
-need_root() {
-    [ "$(id -u)" = "0" ] || die "Run the script as root."
+trap cleanup EXIT INT TERM
+
+confirm() {
+    printf '%s [y/N]: ' "$1"
+    read -r answer || return 1
+
+    case "$answer" in
+        y|Y|yes|YES|Yes)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
 }
 
-load_system() {
-    [ -r /etc/openwrt_release ] || die "/etc/openwrt_release was not found."
-    # shellcheck disable=SC1091
+require_root() {
+    [ "$(id -u 2>/dev/null || echo 1)" = "0" ] \
+        || die "Run this script as root."
+}
+
+require_apk() {
+    command -v apk >/dev/null 2>&1 \
+        || die "apk was not found. This script is only for OpenWrt APK builds."
+}
+
+detect_system() {
+    [ -r /etc/openwrt_release ] \
+        || die "/etc/openwrt_release was not found."
+
     . /etc/openwrt_release
 
     RELEASE_FULL="${DISTRIB_RELEASE:-}"
     ARCH="${DISTRIB_ARCH:-}"
     TARGET="${DISTRIB_TARGET:-unknown}"
 
-    [ -n "$RELEASE_FULL" ] || die "Cannot detect the OpenWrt version."
-    [ -n "$ARCH" ] || die "Cannot detect the APK architecture."
-    command -v apk >/dev/null 2>&1 || die "apk was not found. This script is for OpenWrt 25.12+ APK builds."
+    [ -n "$RELEASE_FULL" ] \
+        || die "Cannot detect OpenWrt release."
 
-    case "$RELEASE_FULL" in
-        SNAPSHOT|*SNAPSHOT*)
-            die "SNAPSHOT is not supported by this stable-release script."
-            ;;
-    esac
+    [ -n "$ARCH" ] \
+        || die "Cannot detect package architecture."
 
     RELEASE_BRANCH="${RELEASE_FULL%.*}"
+
+    REPO_BASE="https://master.dl.sourceforge.net/project/openwrt-passwall-build/releases/packages-${RELEASE_BRANCH}/${ARCH}"
+
+    REPO_PASSWALL_PACKAGES="${REPO_BASE}/passwall_packages/packages.adb"
+    REPO_PASSWALL_LUCI="${REPO_BASE}/passwall_luci/packages.adb"
+    REPO_PASSWALL2="${REPO_BASE}/passwall2/packages.adb"
 }
 
-repo_url() {
-    feed="$1"
-    printf '%s\n' "${SF_BASE}/releases/packages-${RELEASE_BRANCH}/${ARCH}/${feed}/packages.adb"
+make_tmp() {
+    [ -n "${TMP_ROOT:-}" ] && return 0
+
+    TMP_ROOT="$(mktemp -d /tmp/passwall2-apk.XXXXXX)" \
+        || die "Cannot create temporary directory."
 }
 
-expected_repo_text() {
-    repo_url passwall_packages
-    repo_url passwall_luci
-    repo_url passwall2
-}
-
-run_direct() {
+proxy_env_run() {
     (
-        unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY
+        export http_proxy="$PROXY"
+        export https_proxy="$PROXY"
+        export HTTP_PROXY="$PROXY"
+        export HTTPS_PROXY="$PROXY"
+
+        export no_proxy="localhost,127.0.0.1,::1,192.168.1.1,192.168.1.11"
+        export NO_PROXY="$no_proxy"
+
         "$@"
     )
 }
 
-run_proxy() {
-    (
-        export http_proxy="$PROXY_URL"
-        export https_proxy="$PROXY_URL"
-        export HTTP_PROXY="$PROXY_URL"
-        export HTTPS_PROXY="$PROXY_URL"
-        export all_proxy="$PROXY_URL"
-        export ALL_PROXY="$PROXY_URL"
-        "$@"
-    )
-}
+apk_update() {
+    info "Refresh APK indexes: trying direct connection..."
 
-net_run() {
-    description="$1"
-    shift
-
-    log "$description: trying direct connection..."
-    if run_direct "$@"; then
+    if apk update; then
         return 0
     fi
 
-    warn "Direct connection failed. Retrying through $PROXY_URL"
-    run_proxy "$@"
+    warn "Direct APK update failed. Retrying through $PROXY ..."
+
+    proxy_env_run apk update \
+        || die "apk update failed both directly and through the proxy."
+}
+
+apk_commit_with_fallback() {
+    info "Trying direct package download..."
+
+    if "$@"; then
+        return 0
+    fi
+
+    warn "Direct package operation failed. Retrying through $PROXY ..."
+
+    proxy_env_run "$@" \
+        || die "Package operation failed both directly and through the proxy."
 }
 
 fetch_file() {
-    output="$1"
+    out="$1"
     url="$2"
-    command -v wget >/dev/null 2>&1 || die "wget is not installed."
-    rm -f "$output"
-    net_run "Download $(basename "$output")" wget -T 30 -O "$output" "$url" \
-        || { rm -f "$output"; return 1; }
-    [ -s "$output" ] || { rm -f "$output"; return 1; }
-}
 
-is_installed() {
-    apk info --exists "$1" >/dev/null 2>&1
-}
+    rm -f "$out"
 
-installed_version() {
-    apk info -v "$1" 2>/dev/null | sed -n '1p'
-}
+    info "Download directly: $url"
 
-show_pkg() {
-    pkg="$1"
-    if is_installed "$pkg"; then
-        printf '  %-24s %s\n' "$pkg" "$(installed_version "$pkg")"
-    else
-        printf '  %-24s %s\n' "$pkg" "not installed"
+    if wget -T 30 -O "$out" "$url"; then
+        [ -s "$out" ] \
+            || die "Downloaded file is empty: $url"
+
+        return 0
     fi
+
+    warn "Direct download failed. Retrying through $PROXY ..."
+
+    rm -f "$out"
+
+    if proxy_env_run wget -T 30 -O "$out" "$url"; then
+        [ -s "$out" ] \
+            || die "Downloaded file is empty: $url"
+
+        return 0
+    fi
+
+    rm -f "$out"
+
+    return 1
 }
 
 repo_file_is_current() {
-    [ -s "$KEY_FILE" ] || return 1
     [ -s "$REPO_FILE" ] || return 1
-    actual="$(cat "$REPO_FILE" 2>/dev/null)"
-    expected="$(expected_repo_text)"
-    [ "$actual" = "$expected" ]
+
+    grep -Fxq "$REPO_PASSWALL_PACKAGES" "$REPO_FILE" \
+        || return 1
+
+    grep -Fxq "$REPO_PASSWALL_LUCI" "$REPO_FILE" \
+        || return 1
+
+    grep -Fxq "$REPO_PASSWALL2" "$REPO_FILE" \
+        || return 1
+
+    count="$(
+        grep -c \
+        '^https://.*openwrt-passwall-build.*packages\.adb$' \
+        "$REPO_FILE" \
+        2>/dev/null \
+        || true
+    )"
+
+    [ "$count" = "3" ] || return 1
+
+    return 0
+}
+
+key_looks_valid() {
+    [ -s "$KEY_FILE" ] || return 1
+
+    grep -q \
+        '^-----BEGIN PUBLIC KEY-----' \
+        "$KEY_FILE" \
+        || return 1
+
+    grep -q \
+        '^-----END PUBLIC KEY-----' \
+        "$KEY_FILE" \
+        || return 1
+
+    return 0
 }
 
 remove_duplicate_repo_lines() {
-    for file in /etc/apk/repositories /etc/apk/repositories.d/*; do
+    for file in \
+        /etc/apk/repositories \
+        /etc/apk/repositories.d/*
+    do
         [ -f "$file" ] || continue
-        [ "$file" = "$REPO_FILE" ] && continue
-        if grep -q 'openwrt-passwall-build' "$file" 2>/dev/null; then
-            log "Removing duplicate openwrt-passwall-build lines from $file"
-            sed -i '\|openwrt-passwall-build|d' "$file" \
-                || die "Cannot clean duplicate repository lines in $file"
+
+        [ "$file" = "$REPO_FILE" ] \
+            && continue
+
+        if grep -q \
+            'openwrt-passwall-build' \
+            "$file" \
+            2>/dev/null
+        then
+            tmp="${file}.pw2tmp.$$"
+
+            grep -v \
+                'openwrt-passwall-build' \
+                "$file" \
+                > "$tmp" \
+                || true
+
+            mv "$tmp" "$file" \
+                || die "Cannot clean duplicate repository entries in $file"
+
+            info "Removed old PassWall repository entries from $file"
         fi
     done
 }
 
 write_repo_file() {
-    mkdir -p /etc/apk/repositories.d || die "Cannot create /etc/apk/repositories.d"
-    tmp="/tmp/passwall2.list.$$"
-    expected_repo_text > "$tmp" || die "Cannot build repository list."
-    chmod 644 "$tmp" 2>/dev/null || true
-    mv "$tmp" "$REPO_FILE" || die "Cannot install $REPO_FILE"
+    mkdir -p /etc/apk/repositories.d \
+        || die "Cannot create /etc/apk/repositories.d"
+
+    tmp="${REPO_FILE}.tmp.$$"
+
+    cat > "$tmp" <<EOF_REPOS
+$REPO_PASSWALL_PACKAGES
+$REPO_PASSWALL_LUCI
+$REPO_PASSWALL2
+EOF_REPOS
+
+    mv "$tmp" "$REPO_FILE" \
+        || die "Cannot install $REPO_FILE"
 }
 
 install_signing_key() {
-    mkdir -p /etc/apk/keys || die "Cannot create /etc/apk/keys"
-    tmp="/tmp/openwrt-passwall-build.pem.$$"
+    make_tmp
 
-    fetch_file "$tmp" "$KEY_URL" \
-        || die "Cannot download the repository signing key directly or through the proxy."
+    mkdir -p /etc/apk/keys \
+        || die "Cannot create /etc/apk/keys"
 
-    grep -q 'BEGIN PUBLIC KEY' "$tmp" \
-        || { rm -f "$tmp"; die "Downloaded key is not a valid PEM public key."; }
-    grep -q 'END PUBLIC KEY' "$tmp" \
-        || { rm -f "$tmp"; die "Downloaded key is not a valid PEM public key."; }
+    tmp_key="$TMP_ROOT/openwrt-passwall-build.pem"
 
-    chmod 644 "$tmp" 2>/dev/null || true
-    mv "$tmp" "$KEY_FILE" || die "Cannot install the signing key."
+    fetch_file "$tmp_key" "$KEY_URL" \
+        || die "Cannot download repository signing key."
+
+    grep -q \
+        '^-----BEGIN PUBLIC KEY-----' \
+        "$tmp_key" \
+        || die "Downloaded signing key has an unexpected format."
+
+    grep -q \
+        '^-----END PUBLIC KEY-----' \
+        "$tmp_key" \
+        || die "Downloaded signing key is incomplete."
+
+    chmod 0644 "$tmp_key"
+
+    mv "$tmp_key" "$KEY_FILE" \
+        || die "Cannot install signing key."
 }
 
-refresh_indexes() {
-    net_run "Refresh APK indexes" apk update \
-        || die "apk update failed both directly and through the proxy."
-}
+verify_repository() {
+    policy="$(
+        apk policy "$MAIN_PKG" \
+        2>/dev/null \
+        || true
+    )"
 
-verify_feed() {
-    if ! apk search -x "$APP_PKG" 2>/dev/null | grep -q "^${APP_PKG}-"; then
-        die "$APP_PKG is not available after apk update. Check the repository, OpenWrt branch and architecture."
-    fi
+    printf '%s\n' "$policy" \
+        | grep -q 'openwrt-passwall-build' \
+        || die \
+        "The signed repository is configured, but $MAIN_PKG is not visible in apk policy."
 }
 
 setup_repo() {
-    load_system
-    log "OpenWrt $RELEASE_FULL; branch $RELEASE_BRANCH; arch $ARCH; target $TARGET"
+    detect_system
+
+    info \
+    "Configure signed PassWall2 repository for OpenWrt $RELEASE_BRANCH / $ARCH"
 
     remove_duplicate_repo_lines
-    install_signing_key
-    write_repo_file
-    refresh_indexes
-    verify_feed
 
-    log "Signed PassWall2 repository is configured."
-    log "Repository file: $REPO_FILE"
-    log "Signing key:    $KEY_FILE"
-    apk policy "$APP_PKG" 2>/dev/null || true
+    write_repo_file
+
+    install_signing_key
+
+    apk_update
+
+    verify_repository
+
+    info "Signed PassWall2 repository is ready."
 }
 
 ensure_repo() {
-    load_system
-    if repo_file_is_current; then
+    detect_system
+
+    if repo_file_is_current \
+        && key_looks_valid
+    then
         return 0
     fi
-    warn "Repository/key is missing or does not match this OpenWrt branch/architecture. Running setup."
+
+    warn \
+    "PassWall2 repository configuration is missing or does not match this OpenWrt build."
+
     setup_repo
 }
 
-confirm() {
-    question="$1"
-    if [ "${ASSUME_YES:-0}" = "1" ]; then
-        return 0
+installed_version() {
+    pkg="$1"
+
+    apk list \
+        --installed \
+        --manifest \
+        2>/dev/null \
+    | awk \
+        -v p="$pkg" \
+        '$1 == p { print $2; exit }'
+}
+
+world_constraint() {
+    awk \
+        -v p="$MAIN_PKG" \
+        '
+        index($0, p) == 1 {
+            c = substr(
+                $0,
+                length(p) + 1,
+                1
+            )
+
+            if (
+                c == "" ||
+                c == "@" ||
+                c == "<" ||
+                c == ">" ||
+                c == "=" ||
+                c == "~" ||
+                c == "!"
+            ) {
+                print
+                exit
+            }
+        }
+        ' \
+        /etc/apk/world \
+        2>/dev/null
+}
+
+repository_versions() {
+    apk policy "$1" \
+        2>/dev/null \
+    | awk '
+        /^  [^ ]/ {
+            ver = $1
+
+            sub(
+                /:$/,
+                "",
+                ver
+            )
+
+            next
+        }
+
+        /^    https?:\/\// &&
+        /openwrt-passwall-build/ {
+            if (ver != "") {
+                print ver
+            }
+        }
+        '
+}
+
+repository_best_version() {
+    pkg="$1"
+
+    best=""
+
+    for ver in $(repository_versions "$pkg")
+    do
+        if [ -z "$best" ]; then
+            best="$ver"
+            continue
+        fi
+
+        cmp="$(
+            apk version \
+                -t \
+                "$best" \
+                "$ver" \
+                2>/dev/null \
+                || true
+        )"
+
+        [ "$cmp" = "<" ] \
+            && best="$ver"
+    done
+
+    printf '%s\n' "$best"
+}
+
+print_installed_versions() {
+    for pkg in $DISPLAY_PKGS
+    do
+        ver="$(installed_version "$pkg")"
+
+        [ -n "$ver" ] \
+            || ver="not installed"
+
+        printf \
+            '  %-24s %s\n' \
+            "$pkg" \
+            "$ver"
+    done
+}
+
+normalize_main_world_constraint() {
+    current="$(world_constraint)"
+
+    [ -n "$current" ] \
+        || return 0
+
+    [ "$current" = "$MAIN_PKG" ] \
+        && return 0
+
+    warn \
+    "Non-standard APK world constraint detected:"
+
+    printf \
+        '  %s\n' \
+        "$current"
+
+    info \
+    "This usually remains after installation from a local GitHub APK."
+
+    info \
+    "Normalizing it to: $MAIN_PKG"
+
+    apk_commit_with_fallback \
+        apk add \
+        "$MAIN_PKG"
+
+    current="$(world_constraint)"
+
+    [ "$current" = "$MAIN_PKG" ] \
+        || die \
+        "Cannot normalize /etc/apk/world. Current value: ${current:-missing}"
+
+    info \
+    "WORLD constraint normalized successfully."
+}
+
+simulation_is_safe_for_targeted_update() {
+    sim_file="$1"
+
+    count="$(
+        awk \
+        '
+        /^\([[:space:]]*[0-9]+\/[0-9]+\)/ {
+            n++
+        }
+
+        END {
+            print n + 0
+        }
+        ' \
+        "$sim_file"
+    )"
+
+    if [ "$count" -gt 15 ]; then
+        warn \
+        "Simulation contains $count package actions. This is too large for a targeted PassWall2 update."
+
+        return 1
     fi
 
-    printf '%s [y/N]: ' "$question"
-    read -r answer
-    case "$answer" in
-        y|Y|yes|YES) return 0 ;;
-        *) return 1 ;;
-    esac
-}
+    if grep \
+        -Eiq \
+        ' (Upgrading|Replacing|Downgrading) (busybox|apk-tools|libc|firewall4|dnsmasq|dropbear|hostapd|wpad-|kernel|kmod-|base-files)([[:space:]]|\()' \
+        "$sim_file"
+    then
+        warn \
+        "Simulation touches critical OpenWrt system packages."
 
-world_is_plain() {
-    [ -r /etc/apk/world ] && grep -qx "$APP_PKG" /etc/apk/world 2>/dev/null
-}
+        return 1
+    fi
 
-installed_app_version_only() {
-    full="$(installed_version "$APP_PKG")"
-    printf '%s\n' "${full#${APP_PKG}-}"
-}
-
-repo_app_version_only() {
-    full="$(apk search -x "$APP_PKG" 2>/dev/null | sed -n '1p')"
-    [ -n "$full" ] || return 1
-    printf '%s\n' "${full#${APP_PKG}-}"
+    return 0
 }
 
 restart_passwall2() {
-    /etc/init.d/rpcd restart 2>/dev/null || true
+    /etc/init.d/rpcd restart \
+        2>/dev/null \
+        || warn \
+        "rpcd restart failed."
+
     if [ -x /etc/init.d/passwall2 ]; then
-        /etc/init.d/passwall2 enable 2>/dev/null || true
-        /etc/init.d/passwall2 restart 2>/dev/null \
-            || /etc/init.d/passwall2 start 2>/dev/null \
-            || warn "PassWall2 could not be restarted automatically."
+        /etc/init.d/passwall2 enable \
+            2>/dev/null \
+            || true
+
+        /etc/init.d/passwall2 restart \
+            2>/dev/null \
+        || /etc/init.d/passwall2 start \
+            2>/dev/null \
+        || warn \
+            "PassWall2 restart/start failed."
     fi
 }
 
-status_cmd() {
-    load_system
+cmd_status() {
+    detect_system
 
-    printf '%s\n' "PassWall2 APK manager $SCRIPT_VERSION"
-    printf '%s\n' "============================================================"
-    printf 'OpenWrt:       %s\n' "$RELEASE_FULL"
-    printf 'Feed branch:   %s\n' "$RELEASE_BRANCH"
-    printf 'Architecture:  %s\n' "$ARCH"
-    printf 'Target:        %s\n' "$TARGET"
-    printf 'Fallback proxy:%s\n' " $PROXY_URL"
-    printf '%s\n' "------------------------------------------------------------"
+    line
 
-    if [ -s "$KEY_FILE" ]; then
-        printf 'Signing key:   %s\n' "$KEY_FILE"
+    printf \
+        'PassWall2 APK manager %s\n' \
+        "$SCRIPT_VERSION"
+
+    line
+
+    printf \
+        'OpenWrt:       %s\n' \
+        "$RELEASE_FULL"
+
+    printf \
+        'Feed branch:   %s\n' \
+        "$RELEASE_BRANCH"
+
+    printf \
+        'Architecture:  %s\n' \
+        "$ARCH"
+
+    printf \
+        'Target:        %s\n' \
+        "$TARGET"
+
+    printf \
+        'Fallback proxy:%s\n' \
+        " $PROXY"
+
+    subline
+
+    printf \
+        'Signing key:   %s\n' \
+        "$KEY_FILE"
+
+    if key_looks_valid; then
+        printf \
+            'Key status:    OK\n'
     else
-        printf '%s\n' "Signing key:   missing"
+        printf \
+            'Key status:    missing/invalid\n'
     fi
 
-    if [ -s "$REPO_FILE" ]; then
-        printf 'Repository:    %s\n' "$REPO_FILE"
-        sed 's/^/  /' "$REPO_FILE"
+    printf \
+        'Repository:    %s\n' \
+        "$REPO_FILE"
+
+    if [ -f "$REPO_FILE" ]; then
+        sed \
+            's/^/  /' \
+            "$REPO_FILE"
     else
-        printf '%s\n' "Repository:    not configured in the script-managed file"
+        printf \
+            '  missing\n'
     fi
 
-    printf '%s\n' "Other matching repository entries:"
-    found=0
-    for file in /etc/apk/repositories /etc/apk/repositories.d/*; do
-        [ -f "$file" ] || continue
-        [ "$file" = "$REPO_FILE" ] && continue
-        if grep -n 'openwrt-passwall-build' "$file" 2>/dev/null; then
-            printf '  file: %s\n' "$file"
-            found=1
-        fi
-    done
-    [ "$found" -eq 1 ] || printf '%s\n' "  none"
+    subline
 
-    printf '%s\n' "------------------------------------------------------------"
-    show_pkg "$APP_PKG"
-    for pkg in $MINIMAL_RUNTIME_PKGS; do
-        show_pkg "$pkg"
-    done
+    printf \
+        'Installed packages:\n'
 
-    printf '%s\n' "------------------------------------------------------------"
-    printf '%s\n' "/etc/apk/world PassWall2 constraint:"
-    if [ -r /etc/apk/world ] && grep "^${APP_PKG}" /etc/apk/world 2>/dev/null; then
-        :
-    else
-        printf '%s\n' "  no explicit PassWall2 constraint"
-    fi
+    print_installed_versions
 
-    printf '%s\n' "------------------------------------------------------------"
-    printf '%s\n' "Cached repository policy:"
-    apk policy "$APP_PKG" 2>/dev/null || true
+    subline
 
-    printf '%s\n' "------------------------------------------------------------"
-    if [ -x /etc/init.d/passwall2 ]; then
-        printf '%s' "Service:       "
-        /etc/init.d/passwall2 status 2>&1 || true
-    else
-        printf '%s\n' "Service:       not installed"
-    fi
+    printf \
+        '/etc/apk/world PassWall2 constraint:\n'
+
+    wc_line="$(world_constraint)"
+
+    printf \
+        '  %s\n' \
+        "${wc_line:-not present}"
+
+    subline
+
+    printf \
+        'Cached policy:\n'
+
+    apk policy \
+        "$MAIN_PKG" \
+        2>/dev/null \
+        || true
+
+    line
 }
 
-check_cmd() {
+cmd_check() {
     ensure_repo
-    refresh_indexes
-    verify_feed
 
-    printf '%s\n' "Installed:"
-    show_pkg "$APP_PKG"
-    for pkg in $MINIMAL_RUNTIME_PKGS; do
-        show_pkg "$pkg"
-    done
+    apk_update
 
-    printf '%s\n' "------------------------------------------------------------"
-    printf '%s\n' "PassWall2 repository policy:"
-    apk policy "$APP_PKG" 2>/dev/null || true
+    verify_repository
 
-    printf '%s\n' "------------------------------------------------------------"
-    printf '%s\n' "Available updates in the PassWall2 minimal stack:"
-    if ! apk list --upgradable 2>/dev/null \
-        | grep -E '^(luci-app-passwall2|xray-core|hysteria|geoview|tcping|v2ray-geoip|v2ray-geosite)-'; then
-        printf '%s\n' "  none"
+    installed="$(
+        installed_version \
+        "$MAIN_PKG"
+    )"
+
+    available="$(
+        repository_best_version \
+        "$MAIN_PKG"
+    )"
+
+    line
+
+    printf \
+        'PassWall2 status\n'
+
+    line
+
+    printf \
+        'Installed version:  %s\n' \
+        "${installed:-not installed}"
+
+    printf \
+        'Repository version: %s\n' \
+        "${available:-not found}"
+
+    printf \
+        'WORLD constraint:    %s\n' \
+        "$(world_constraint)"
+
+    subline
+
+    printf \
+        'Repository policy:\n'
+
+    apk policy \
+        "$MAIN_PKG" \
+        2>/dev/null \
+        || true
+
+    subline
+
+    printf \
+        'Available updates in the PassWall2 stack:\n'
+
+    updates="$(
+        apk list \
+            --upgradeable \
+            2>/dev/null \
+        | grep \
+            -E \
+            '^(luci-app-passwall2|xray-core|hysteria|geoview|tcping|v2ray-geoip|v2ray-geosite)-' \
+        || true
+    )"
+
+    if [ -n "$updates" ]; then
+        printf \
+            '%s\n' \
+            "$updates"
+    else
+        printf \
+            '  none\n'
     fi
+
+    line
 }
 
-update_cmd() {
+cmd_update() {
     ensure_repo
-    refresh_indexes
-    verify_feed
 
-    is_installed "$APP_PKG" \
-        || die "$APP_PKG is not installed. Use the install command."
+    apk_update
 
-    installed_ver="$(installed_app_version_only)"
-    repo_ver="$(repo_app_version_only)" \
-        || die "Cannot determine the repository version of $APP_PKG."
-    comparison="$(apk version -t "$installed_ver" "$repo_ver" 2>/dev/null)" \
-        || die "Cannot compare installed and repository versions."
+    verify_repository
 
-    log "Installed version: $installed_ver"
-    log "Repository version: $repo_ver"
-    apk policy "$APP_PKG" 2>/dev/null || true
+    installed="$(
+        installed_version \
+        "$MAIN_PKG"
+    )"
 
-    case "$comparison" in
-        '>')
-            warn "The installed PassWall2 version is newer than the signed repository version."
-            warn "Nothing was changed. Wait until the repository catches up, or use a deliberate GitHub rollback."
-            return 0
-            ;;
+    [ -n "$installed" ] \
+        || die \
+        "$MAIN_PKG is not installed. Use: $0 install"
+
+    normalize_main_world_constraint
+
+    installed="$(
+        installed_version \
+        "$MAIN_PKG"
+    )"
+
+    available="$(
+        repository_best_version \
+        "$MAIN_PKG"
+    )"
+
+    [ -n "$available" ] \
+        || die \
+        "Cannot determine repository version of $MAIN_PKG."
+
+    info \
+    "Installed version:  $installed"
+
+    info \
+    "Repository version: $available"
+
+    cmp="$(
+        apk version \
+            -t \
+            "$installed" \
+            "$available" \
+            2>/dev/null \
+            || true
+    )"
+
+    case "$cmp" in
         '=')
-            if world_is_plain; then
-                log "The latest repository version is already installed. Nothing was changed."
-                return 0
-            fi
+            info \
+            "PassWall2 is already up to date."
 
-            warn "The same version is installed, but /etc/apk/world contains a local/pinned package constraint:"
-            grep "^${APP_PKG}" /etc/apk/world 2>/dev/null || true
-            log "Simulation: adopt the same version into normal repository management."
-            apk add --simulate "$APP_PKG" \
-                || die "Repository adoption simulation failed. Nothing was changed."
-            confirm "Replace the local/pinned constraint with normal repository management?" \
-                || { warn "Cancelled."; return 0; }
-            net_run "Adopt $APP_PKG from repository" apk add "$APP_PKG" \
-                || die "Repository adoption failed."
-            restart_passwall2
-            log "PassWall2 is now managed by the signed repository."
             return 0
             ;;
-        '<')
-            if world_is_plain; then
-                log "Simulation: apk upgrade $APP_PKG"
-                apk upgrade --simulate "$APP_PKG" \
-                    || die "Upgrade simulation failed. Nothing was changed."
-                confirm "Update only $APP_PKG from the signed repository?" \
-                    || { warn "Cancelled."; return 0; }
-                net_run "Update $APP_PKG" apk upgrade "$APP_PKG" \
-                    || die "PassWall2 update failed."
-            else
-                warn "A local/pinned PassWall2 constraint was found in /etc/apk/world:"
-                grep "^${APP_PKG}" /etc/apk/world 2>/dev/null || true
-                log "The repository version is newer; apk add will adopt and update PassWall2 in one transaction."
-                apk add --simulate "$APP_PKG" \
-                    || die "Adoption/update simulation failed. Nothing was changed."
-                confirm "Adopt and update $APP_PKG from the signed repository?" \
-                    || { warn "Cancelled."; return 0; }
-                net_run "Adopt and update $APP_PKG" apk add "$APP_PKG" \
-                    || die "PassWall2 adoption/update failed."
-            fi
 
-            restart_passwall2
-            log "Done: $(installed_version "$APP_PKG")"
-            log "Runtime cores were not explicitly requested for upgrade."
+        '>')
+            warn \
+            "Installed PassWall2 is newer than the signed repository version. No downgrade will be performed."
+
+            return 0
             ;;
+
+        '<')
+            ;;
+
         *)
-            die "Unexpected version comparison result: $comparison"
+            die \
+            "Cannot compare installed and repository versions: '$installed' vs '$available'."
             ;;
     esac
-}
 
-install_cmd() {
-    ensure_repo
-    refresh_indexes
-    verify_feed
+    make_tmp
 
-    set -- "$APP_PKG"
-    for pkg in $MINIMAL_RUNTIME_PKGS; do
-        set -- "$@" "$pkg"
-    done
+    sim="$TMP_ROOT/update-simulation.txt"
 
-    log "Minimal stack: $*"
-    log "Simulation: apk add minimal PassWall2 stack"
-    apk add --simulate "$@" \
-        || die "Installation simulation failed. Nothing was changed."
+    info \
+    "Simulate targeted update WITHOUT --available ..."
 
-    confirm "Install/update the minimal PassWall2 stack from the signed repository?" \
-        || { warn "Cancelled."; return 0; }
+    if ! apk upgrade \
+        --simulate \
+        "$MAIN_PKG" \
+        > "$sim" \
+        2>&1
+    then
+        cat "$sim"
 
-    net_run "Install/update minimal PassWall2 stack" apk add "$@" \
-        || die "Minimal PassWall2 installation failed."
+        die \
+        "Targeted update simulation failed."
+    fi
+
+    cat "$sim"
+
+    simulation_is_safe_for_targeted_update \
+        "$sim" \
+        || die \
+        "Update aborted by safety checks. Nothing was changed."
+
+    confirm \
+    "Apply this targeted PassWall2 update?" \
+    || {
+        info \
+        "Cancelled. Nothing was changed."
+
+        return 0
+    }
+
+    apk_commit_with_fallback \
+        apk upgrade \
+        "$MAIN_PKG"
 
     restart_passwall2
-    log "PassWall2 minimal stack is installed."
-    log "PassWall2: $(installed_version "$APP_PKG")"
+
+    after="$(
+        installed_version \
+        "$MAIN_PKG"
+    )"
+
+    info \
+    "PassWall2 after update: ${after:-unknown}"
+
+    [ "$after" = "$available" ] \
+        || warn \
+        "Installed version does not exactly match the repository candidate. Check: apk policy $MAIN_PKG"
 }
 
-check_download_size() {
-    file="$1"
-    minimum="$2"
-    label="$3"
-    [ -s "$file" ] || die "$label download is empty."
-    size="$(wc -c < "$file" | tr -d ' ')"
-    [ "${size:-0}" -ge "$minimum" ] \
-        || die "$label download is suspiciously small: ${size:-0} bytes."
+cmd_install() {
+    ensure_repo
+
+    apk_update
+
+    verify_repository
+
+    line
+
+    printf \
+        'Minimal installation request\n'
+
+    line
+
+    printf \
+        'Explicit packages:\n'
+
+    printf \
+        '  luci-app-passwall2\n'
+
+    printf \
+        '  xray-core\n'
+
+    printf \
+        '  hysteria\n'
+
+    printf \
+        '\nPassWall2 dependencies such as geoview, tcping, v2ray-geoip and\n'
+
+    printf \
+        'v2ray-geosite will be resolved automatically by APK.\n'
+
+    line
+
+    make_tmp
+
+    sim="$TMP_ROOT/install-simulation.txt"
+
+    if ! apk add \
+        --simulate \
+        $MINIMAL_PKGS \
+        > "$sim" \
+        2>&1
+    then
+        cat "$sim"
+
+        die \
+        "Minimal installation simulation failed."
+    fi
+
+    cat "$sim"
+
+    confirm \
+    "Install this minimal PassWall2 stack from the signed repository?" \
+    || {
+        info \
+        "Cancelled. Nothing was changed."
+
+        return 0
+    }
+
+    apk_commit_with_fallback \
+        apk add \
+        $MINIMAL_PKGS
+
+    restart_passwall2
+
+    installed="$(
+        installed_version \
+        "$MAIN_PKG"
+    )"
+
+    [ -n "$installed" ] \
+        || die \
+        "Installation finished, but $MAIN_PKG is not present in the installed package database."
+
+    info \
+    "PassWall2 installed: $installed"
 }
 
-github_cmd() {
-    tag="${1:-}"
-    mode="${2:-luci}"
-
-    [ -n "$tag" ] || die "Specify a release tag, for example: 26.6.3-1"
-    case "$tag" in
-        *[!0-9.-]*|.*|-*|*.) die "Invalid release tag: $tag" ;;
-    esac
-    case "$mode" in
-        luci|minimal) : ;;
-        *) die "Mode must be 'luci' or 'minimal'." ;;
-    esac
-
-    load_system
-    workdir="$(mktemp -d /tmp/passwall2-github.XXXXXX)" \
-        || die "Cannot create a temporary directory."
-    trap 'rm -rf "$workdir"' EXIT INT TERM
+find_and_download_luci_asset() {
+    tag="$1"
 
     apk_ver="${tag%-*}-r${tag##*-}"
-    luci_apk="$workdir/luci-app-passwall2-${apk_ver}.apk"
-    luci_url="${GH_BASE}/${tag}/luci-app-passwall2-${apk_ver}.apk"
 
-    log "Official GitHub release: $tag"
-    log "APK version:             $apk_ver"
-    log "Architecture:            $ARCH"
-    log "Mode:                    $mode"
+    base="https://github.com/${GITHUB_REPO}/releases/download/${tag}"
 
-    fetch_file "$luci_apk" "$luci_url" \
-        || die "Cannot download $luci_url"
-    check_download_size "$luci_apk" 100000 "PassWall2 LuCI APK"
+    out="$2"
 
-    set -- "$luci_apk"
+    FOUND_URL=""
 
-    if [ "$mode" = "minimal" ]; then
-        ensure_repo
-        refresh_indexes
-        if ! command -v unzip >/dev/null 2>&1; then
-            net_run "Install unzip" apk add unzip \
-                || die "Cannot install unzip, which is required for the GitHub bundle."
-        fi
+    url="${base}/luci-app-passwall2-${apk_ver}.apk"
 
-        bundle="$workdir/passwall_packages_apk_${ARCH}.zip"
-        bundle_url="${GH_BASE}/${tag}/passwall_packages_apk_${ARCH}.zip"
-        fetch_file "$bundle" "$bundle_url" \
-            || die "Cannot download $bundle_url"
-        check_download_size "$bundle" 1000000 "PassWall2 package bundle"
+    if fetch_file \
+        "$out" \
+        "$url"
+    then
+        FOUND_URL="$url"
 
-        mkdir -p "$workdir/pkgs" || die "Cannot create package extraction directory."
-        unzip -oq "$bundle" -d "$workdir/pkgs" \
-            || die "Cannot unpack the PassWall2 package bundle."
-
-        set -- \
-            "$luci_apk" \
-            "$workdir"/pkgs/xray-core-*.apk \
-            "$workdir"/pkgs/hysteria-*.apk \
-            "$workdir"/pkgs/geoview-*.apk \
-            "$workdir"/pkgs/tcping-*.apk \
-            "$workdir"/pkgs/v2ray-geoip-*.apk \
-            "$workdir"/pkgs/v2ray-geosite-*.apk
-
-        for file in "$@"; do
-            [ -f "$file" ] || die "A required package is missing from the GitHub bundle: $file"
-        done
+        return 0
     fi
 
-    warn "This emergency mode installs local upstream APK files with --allow-untrusted."
-    warn "Use it only for a deliberate rollback/specific release. Normal updates should use the signed repository."
+    url="${base}/luci-app-passwall2_${tag}_all.apk"
 
-    net_run "Simulate GitHub release installation" apk add --allow-untrusted --simulate "$@" \
-        || die "GitHub release installation simulation failed. Nothing was changed."
+    if fetch_file \
+        "$out" \
+        "$url"
+    then
+        FOUND_URL="$url"
 
-    confirm "Install official GitHub release $tag in '$mode' mode?" \
-        || { warn "Cancelled."; return 0; }
+        return 0
+    fi
 
-    net_run "Install GitHub release $tag" apk add --allow-untrusted "$@" \
-        || die "GitHub release installation failed."
+    url="${base}/luci-app-passwall2_${apk_ver}_all.apk"
+
+    if fetch_file \
+        "$out" \
+        "$url"
+    then
+        FOUND_URL="$url"
+
+        return 0
+    fi
+
+    return 1
+}
+
+cmd_github() {
+    tag="${1:-}"
+
+    mode="${2:-luci}"
+
+    [ -n "$tag" ] \
+        || die \
+        "Usage: $0 github TAG [luci|minimal]"
+
+    case "$tag" in
+        *[!A-Za-z0-9._-]*)
+            die \
+            "Unsafe TAG value: $tag"
+            ;;
+    esac
+
+    case "$mode" in
+        luci|minimal)
+            ;;
+
+        *)
+            die \
+            "Mode must be 'luci' or 'minimal'."
+            ;;
+    esac
+
+    detect_system
+
+    make_tmp
+
+    luci_apk="$TMP_ROOT/luci-app-passwall2.apk"
+
+    info \
+    "Emergency GitHub mode. Packages are downloaded manually and require --allow-untrusted."
+
+    find_and_download_luci_asset \
+        "$tag" \
+        "$luci_apk" \
+        || die \
+        "Cannot find a supported LuCI APK asset for release $tag."
+
+    info \
+    "LuCI asset: $FOUND_URL"
+
+    if [ "$mode" = "luci" ]; then
+        info \
+        "Simulate manual LuCI package installation..."
+
+        apk add \
+            --allow-untrusted \
+            --simulate \
+            "$luci_apk" \
+            || die \
+            "Manual LuCI installation simulation failed."
+
+        confirm \
+        "Install/rollback only luci-app-passwall2 from GitHub release $tag?" \
+        || {
+            info \
+            "Cancelled. Nothing was changed."
+
+            return 0
+        }
+
+        apk add \
+            --allow-untrusted \
+            "$luci_apk" \
+            || die \
+            "Manual LuCI installation failed."
+    else
+        command -v unzip \
+            >/dev/null \
+            2>&1 \
+        || {
+            apk_update
+
+            apk_commit_with_fallback \
+                apk add \
+                unzip
+        }
+
+        bundle="$TMP_ROOT/passwall_packages_apk_${ARCH}.zip"
+
+        bundle_url="https://github.com/${GITHUB_REPO}/releases/download/${tag}/passwall_packages_apk_${ARCH}.zip"
+
+        fetch_file \
+            "$bundle" \
+            "$bundle_url" \
+            || die \
+            "Cannot download package bundle for architecture $ARCH."
+
+        pkgdir="$TMP_ROOT/pkgs"
+
+        mkdir -p "$pkgdir"
+
+        unzip \
+            -oq \
+            "$bundle" \
+            -d "$pkgdir" \
+            || die \
+            "Cannot unpack GitHub package bundle."
+
+        for pkg in \
+            xray-core \
+            hysteria \
+            geoview \
+            tcping \
+            v2ray-geoip \
+            v2ray-geosite
+        do
+            ls \
+                "$pkgdir"/"$pkg"-*.apk \
+                >/dev/null \
+                2>&1 \
+                || die \
+                "Package '$pkg' was not found in the GitHub bundle."
+        done
+
+        info \
+        "Simulate manual minimal-stack installation..."
+
+        apk add \
+            --allow-untrusted \
+            --simulate \
+            "$luci_apk" \
+            "$pkgdir"/xray-core-*.apk \
+            "$pkgdir"/hysteria-*.apk \
+            "$pkgdir"/geoview-*.apk \
+            "$pkgdir"/tcping-*.apk \
+            "$pkgdir"/v2ray-geoip-*.apk \
+            "$pkgdir"/v2ray-geosite-*.apk \
+            || die \
+            "Manual minimal-stack simulation failed."
+
+        confirm \
+        "Install/rollback the minimal stack from GitHub release $tag?" \
+        || {
+            info \
+            "Cancelled. Nothing was changed."
+
+            return 0
+        }
+
+        apk add \
+            --allow-untrusted \
+            "$luci_apk" \
+            "$pkgdir"/xray-core-*.apk \
+            "$pkgdir"/hysteria-*.apk \
+            "$pkgdir"/geoview-*.apk \
+            "$pkgdir"/tcping-*.apk \
+            "$pkgdir"/v2ray-geoip-*.apk \
+            "$pkgdir"/v2ray-geosite-*.apk \
+            || die \
+            "Manual minimal-stack installation failed."
+    fi
 
     restart_passwall2
-    log "Installed GitHub release: $(installed_version "$APP_PKG")"
-    warn "A local-package constraint may now exist in /etc/apk/world."
-    warn "The next normal 'update' command will offer to adopt the package back into the signed repository."
+
+    warn \
+    "GitHub manual mode may create an identity-hash constraint in /etc/apk/world."
+
+    warn \
+    "A later signed-repository update will normalize that constraint automatically."
+
+    info \
+    "Installed PassWall2: $(installed_version "$MAIN_PKG")"
+}
+
+usage() {
+    cat <<EOF_USAGE
+PassWall2 APK manager $SCRIPT_VERSION
+
+Usage:
+  $0 status
+  $0 setup
+  $0 check
+  $0 update
+  $0 install
+  $0 github TAG [luci|minimal]
+
+Normal workflow:
+  $0 check
+  $0 update
+
+After Attended Sysupgrade with configuration preservation:
+  $0 install
+
+Emergency rollback example:
+  $0 github 26.6.3-1 luci
+EOF_USAGE
 }
 
 main() {
-    need_root
+    require_root
+
+    require_apk
+
     command="${1:-help}"
-    shift 2>/dev/null || true
 
     case "$command" in
-        status)  status_cmd ;;
-        setup)   setup_repo ;;
-        check)   check_cmd ;;
-        update)  update_cmd ;;
-        install|minimal) install_cmd ;;
-        github)  github_cmd "${1:-}" "${2:-luci}" ;;
-        help|-h|--help) usage ;;
-        *) usage; die "Unknown command: $command" ;;
+        status)
+            cmd_status
+            ;;
+
+        setup)
+            setup_repo
+            ;;
+
+        check)
+            cmd_check
+            ;;
+
+        update)
+            cmd_update
+            ;;
+
+        install)
+            cmd_install
+            ;;
+
+        github)
+            shift
+
+            cmd_github \
+                "${1:-}" \
+                "${2:-luci}"
+            ;;
+
+        help|-h|--help)
+            usage
+            ;;
+
+        *)
+            usage
+
+            die \
+            "Unknown command: $command"
+            ;;
     esac
 }
 
