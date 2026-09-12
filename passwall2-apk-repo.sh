@@ -1,14 +1,14 @@
 #!/bin/sh
 # PassWall2 APK manager, reviewed against OpenWrt 25.12 / PW2 26.9.12-1.
 # SPDX-License-Identifier: GPL-3.0-only
-# check [install] | update | install | status
+# check [install] | update [--allow-prerelease] | install [--allow-prerelease] | status | help
 # BusyBox ash is the target shell; local is intentionally used.
 # shellcheck disable=SC3043
 # No global apk upgrade; no unsigned APKs; no automatic rollback claims.
 set -eu
 umask 077
 export LC_ALL=C
-SCRIPT_VERSION="4.0.0"
+SCRIPT_VERSION="4.0.1"
 PROXY="${PROXY:-http://192.168.1.11:1088}"
 MAIN_PKG=luci-app-passwall2
 KEY_SHA256=52802b143489214e13b78f96599a147a638205cc22d9dd6d71229504e38ddc00
@@ -17,6 +17,7 @@ KEY_FILE=/etc/apk/keys/openwrt-passwall-build.pem
 REPO_FILE=/etc/apk/repositories.d/passwall2.list
 BACKUP_DIR=/root/passwall2-backups
 TMP_ROOT='' LAST_BACKUP='' LOCKED=0 MAINTENANCE=0 COMMIT_STARTED=0 KEEP_TMP=0
+ALLOW_PRERELEASE=0 RELEASE_PRERELEASE=0 IS_CHECK=0
 MODE=update SWAP_DNS=0 OLD_DNS='' ORIGINAL_ENABLED=0 SERVER_ENABLED=0
 
 info() { printf '[INFO] %s\n' "$*"; }
@@ -184,13 +185,18 @@ select_targets() {
     metadata_tag=$(jsonfilter -i "$TMP_ROOT/release.json" -e '@.tag_name')
     [ "$metadata_tag" = "$tag" ] || die 'Release metadata/tag mismatch.'
     [ "$(jsonfilter -i "$TMP_ROOT/release.json" -e '@.draft')" = false ] || die 'Draft or invalid release.'
-    if [ "$(jsonfilter -i "$TMP_ROOT/release.json" -e '@.prerelease')" != false ]; then
-        if fetch "$TMP_ROOT/latest.json" 'https://api.github.com/repos/Openwrt-Passwall/openwrt-passwall2/releases/latest'; then
-            latest=$(jsonfilter -i "$TMP_ROOT/latest.json" -e '@.tag_name' || true)
-            info "Signed feed candidate: $tag; GitHub latest stable: ${latest:-unknown}"
-        fi
-        die "PassWall2 $tag is currently marked prerelease. Wait for a stable version in the signed feed; this flag alone does not explain why the author changed its status."
-    fi
+    case "$(jsonfilter -i "$TMP_ROOT/release.json" -e '@.prerelease')" in
+        false) RELEASE_PRERELEASE=0;;
+        true)
+            RELEASE_PRERELEASE=1
+            warn "PassWall2 $tag is marked prerelease. This flag alone does not establish compatibility."
+            if fetch "$TMP_ROOT/latest.json" 'https://api.github.com/repos/Openwrt-Passwall/openwrt-passwall2/releases/latest'; then
+                latest=$(jsonfilter -i "$TMP_ROOT/latest.json" -e '@.tag_name' || true)
+                info "Signed feed candidate: $tag; GitHub latest stable: ${latest:-unknown}"
+            fi
+            ;;
+        *) die 'Missing or invalid prerelease status in release metadata.';;
+    esac
     jsonfilter -i "$TMP_ROOT/release.json" -e '@.body' > "$TMP_ROOT/release-body"
     # Warnings are conservative filters, never proof that a release is safe.
     if grep -Eiq 'breaking change|restore.*default config|incompatible config|configuration structure|migration logic' "$TMP_ROOT/release-body"; then
@@ -563,6 +569,38 @@ postcheck() {
     info 'Check Internet/DNS and your selected nodes from a LAN client. Local checks cannot prove remote server reachability.'
 }
 
+print_commands() {
+    cat <<'EOF'
+
+============================================================
+Памятка команд (check ничего не устанавливает):
+  sh /root/passwall2-apk-repo.sh check
+  sh /root/passwall2-apk-repo.sh update
+  sh /root/passwall2-apk-repo.sh update --allow-prerelease
+
+После прошивки / для восстановления пакетов:
+  sh /root/passwall2-apk-repo.sh check install
+  sh /root/passwall2-apk-repo.sh install
+  sh /root/passwall2-apk-repo.sh install --allow-prerelease
+
+Текущие версии и справка:
+  sh /root/passwall2-apk-repo.sh status
+  sh /root/passwall2-apk-repo.sh help
+
+--allow-prerelease разрешает только предварительный релиз.
+Остальные проверки сохраняются. Пакеты берутся из репозитория.
+Ошибка check требует разбора; этот список не означает,
+что проверка прошла успешно или обновление разрешено.
+============================================================
+EOF
+}
+
+enforce_prerelease() {
+    [ "$RELEASE_PRERELEASE" = 1 ] || return 0
+    [ "$ALLOW_PRERELEASE" = 1 ] || die "Prerelease installation blocked. To explicitly allow it, run: sh /root/passwall2-apk-repo.sh $MODE --allow-prerelease"
+    warn 'Prerelease explicitly allowed for this run. All other safety checks remain enabled.'
+}
+
 cleanup() {
     local rc="$?"
     trap - EXIT HUP INT TERM
@@ -577,6 +615,7 @@ cleanup() {
     fi
     if [ -n "$TMP_ROOT" ] && [ "$KEEP_TMP" = 0 ]; then rm -rf "$TMP_ROOT"; fi
     [ "$LOCKED" = 0 ] || rmdir /tmp/passwall2-apk-manager.lock 2>/dev/null || true
+    if [ "$IS_CHECK" = 1 ]; then print_commands; fi
     exit "$rc"
 }
 
@@ -592,19 +631,35 @@ status() {
 
 main() {
     local command="${1:-check}" answer
+    [ "$#" -eq 0 ] || shift
+    ALLOW_PRERELEASE=0
+    IS_CHECK=0
     case "$command" in
-        status) require_system; status; return;;
-        check) [ "$#" -le 2 ] || die 'Usage: check [install]'; MODE="${2:-update}"; case "$MODE" in update|install) ;; *) die 'Usage: check [install]';; esac;;
-        update|install) MODE="$command"; [ "$#" -le 1 ] || die 'No --force mode is provided.';;
-        *) die 'Usage: passwall2-apk-repo.sh {check [install]|update|install|status}';;
+        help|--help|-h) [ "$#" -eq 0 ] || die 'Unexpected help arguments.'; print_commands; return;;
+        status) [ "$#" -eq 0 ] || die 'Usage: status'; require_system; status; return;;
+        check)
+            IS_CHECK=1
+            MODE="${1:-update}"
+            [ "$#" -le 1 ] || die 'Usage: check [install]'
+            case "$MODE" in update|install) ;; *) die 'Usage: check [install]';; esac
+            ;;
+        update|install)
+            MODE="$command"
+            case "$#" in
+                0) ;;
+                1) [ "$1" = --allow-prerelease ] || die 'Only --allow-prerelease is supported.'; ALLOW_PRERELEASE=1;;
+                *) die 'Usage: update|install [--allow-prerelease]';;
+            esac
+            ;;
+        *) die 'Usage: passwall2-apk-repo.sh {check [install]|update [--allow-prerelease]|install [--allow-prerelease]|status|help}';;
     esac
-    require_system
-    mkdir /tmp/passwall2-apk-manager.lock 2>/dev/null || die 'Another manager is running (or its lock remains after an interrupted run).'
-    LOCKED=1
     trap cleanup EXIT
     trap 'exit 129' HUP
     trap 'exit 130' INT
     trap 'exit 143' TERM
+    require_system
+    mkdir /tmp/passwall2-apk-manager.lock 2>/dev/null || die 'Another manager is running (or its lock remains after an interrupted run).'
+    LOCKED=1
     prepare
     check_idle
     snapshot_files
@@ -612,11 +667,17 @@ main() {
     simulate
     space_check
     info 'Safety gates passed for the package plan. This is not a guarantee against firmware/network regressions.'
-    [ "$command" != check ] || return 0
+    if [ "$command" = check ]; then
+        if [ "$RELEASE_PRERELEASE" = 1 ]; then
+            warn "Plan checked; installation requires explicit $MODE --allow-prerelease."
+        fi
+        return 0
+    fi
     if [ ! -s "$TMP_ROOT/actions" ] && [ ! -s "$TMP_ROOT/reinstall" ] && [ "$SWAP_DNS" = 0 ]; then
         info 'Selected packages and actual core versions are already current.'
         return 0
     fi
+    enforce_prerelease
     printf 'Download and apply this %s? [y/N]: ' "$MODE"
     read -r answer || return 0
     case "$answer" in y|Y|yes|YES) ;; *) info 'Cancelled.'; return 0;; esac
@@ -647,3 +708,4 @@ main() {
 
 # Source-only mode is for deterministic offline regression tests.
 if [ "${PW2_SOURCE_ONLY:-0}" != 1 ]; then main "$@"; fi
+
