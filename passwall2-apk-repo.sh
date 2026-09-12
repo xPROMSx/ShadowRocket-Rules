@@ -1,5 +1,5 @@
 #!/bin/sh
-# PassWall2! APK manager, reviewed against OpenWrt 25.12 / PW2 26.9.12-1.
+# PassWall2 APK manager, reviewed against OpenWrt 25.12 / PW2 26.9.12-1.
 # SPDX-License-Identifier: GPL-3.0-only
 # check [install] | update [--allow-prerelease] | install [--allow-prerelease] | status | help
 # BusyBox ash is the target shell; local is intentionally used.
@@ -8,7 +8,7 @@
 set -eu
 umask 077
 export LC_ALL=C
-SCRIPT_VERSION="4.0.1"
+SCRIPT_VERSION="4.0.2"
 PROXY="${PROXY:-http://192.168.1.11:1088}"
 MAIN_PKG=luci-app-passwall2
 KEY_SHA256=52802b143489214e13b78f96599a147a638205cc22d9dd6d71229504e38ddc00
@@ -319,7 +319,10 @@ simulate() {
     local arg pkg version
     set --
     while IFS= read -r arg; do set -- "$@" "$arg"; done < "$TMP_ROOT/targets"
-    apk_run --no-network add --simulate "$@" > "$TMP_ROOT/plan" 2>&1 || { cat "$TMP_ROOT/plan"; die 'APK dependency simulation failed. Nothing installed.'; }
+    # At this point only indexes are cached, not APK archives. --no-network
+    # masks uncached remote packages even with --simulate (APK 3).
+    # Simulation itself does not install packages or execute package scripts.
+    network_run apk_run add --simulate "$@" > "$TMP_ROOT/plan" 2>&1 || { cat "$TMP_ROOT/plan"; die 'APK dependency simulation failed. Nothing installed.'; }
     cat "$TMP_ROOT/plan"
     check_plan "$TMP_ROOT/plan" "$TMP_ROOT/actions"
     while IFS= read -r arg; do
@@ -329,7 +332,7 @@ simulate() {
         fi
     done < "$TMP_ROOT/targets"
     while IFS= read -r arg; do
-        apk_run --no-network fix --simulate --reinstall "$arg" > "$TMP_ROOT/fix-$arg-plan" 2>&1 || die "Cannot simulate binary repair for $arg."
+        network_run apk_run fix --simulate --reinstall "$arg" > "$TMP_ROOT/fix-$arg-plan" 2>&1 || { cat "$TMP_ROOT/fix-$arg-plan"; die "Cannot simulate binary repair for $arg."; }
         check_plan "$TMP_ROOT/fix-$arg-plan" "$TMP_ROOT/fix-$arg-actions"
         cat "$TMP_ROOT/fix-$arg-plan"
     done < "$TMP_ROOT/reinstall"
@@ -392,9 +395,15 @@ prefetch() {
     # Offline solver must produce exactly the reviewed plan.
     set --
     while IFS= read -r arg; do set -- "$@" "$arg"; done < "$TMP_ROOT/targets"
-    apk_run --no-network add --simulate "$@" > "$TMP_ROOT/offline-plan" 2>&1 || die 'Offline simulation failed.'
-    parse_plan "$TMP_ROOT/offline-plan" > "$TMP_ROOT/offline-actions" || die 'Offline action parser failed.'
+    apk_run --no-network add --simulate "$@" > "$TMP_ROOT/offline-plan" 2>&1 || { cat "$TMP_ROOT/offline-plan"; die 'Offline simulation failed; no packages were changed.'; }
+    check_plan "$TMP_ROOT/offline-plan" "$TMP_ROOT/offline-actions"
     cmp -s "$TMP_ROOT/actions" "$TMP_ROOT/offline-actions" || die 'The package plan changed during download.'
+    # Repair must also be executable from the cache before stopping services.
+    while IFS= read -r arg; do
+        apk_run --no-network fix --simulate --reinstall "$arg" > "$TMP_ROOT/offline-fix-$arg-plan" 2>&1 || { cat "$TMP_ROOT/offline-fix-$arg-plan"; die "Offline repair simulation failed for $arg."; }
+        check_plan "$TMP_ROOT/offline-fix-$arg-plan" "$TMP_ROOT/offline-fix-$arg-actions"
+        cmp -s "$TMP_ROOT/fix-$arg-actions" "$TMP_ROOT/offline-fix-$arg-actions" || die "The repair plan changed during download: $arg."
+    done < "$TMP_ROOT/reinstall"
 }
 
 backup() {
@@ -708,4 +717,3 @@ main() {
 
 # Source-only mode is for deterministic offline regression tests.
 if [ "${PW2_SOURCE_ONLY:-0}" != 1 ]; then main "$@"; fi
-
