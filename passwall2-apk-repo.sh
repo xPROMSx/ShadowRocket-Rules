@@ -1,5 +1,5 @@
 #!/bin/sh
-# PassWall2 APK manager, reviewed against OpenWrt 25.12 / PW2 26.9.12-1.
+# PassWall2! APK manager, reviewed against OpenWrt 25.12 / PW2 26.9.12-1.
 # SPDX-License-Identifier: GPL-3.0-only
 # check [install] | update [--allow-prerelease] | install [--allow-prerelease] | status | help
 # BusyBox ash is the target shell; local is intentionally used.
