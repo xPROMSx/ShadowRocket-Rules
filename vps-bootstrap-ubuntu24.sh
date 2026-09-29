@@ -10,7 +10,8 @@ export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 # Keep this filename for compatibility with existing download URLs.
 # Target: safe SSH hardening, DNS-over-TLS, Ubuntu Pro/Livepatch, unattended upgrades with 04:38 reboot,
 # fail2ban, UFW, fixed APT timers and basic network tuning for proxy workloads.
-# Requirements: run as root; /root/.ssh/authorized_keys must already contain your public key.
+# Requirements: run as root; HTTPS access to SSH ID @proms for key provisioning.
+# Exclusive ownership: root authorized_keys is replaced with only the Proms key set.
 
 TIMEZONE="${TIMEZONE:-Europe/Moscow}"
 SSH_PORT="${SSH_PORT:-auto}"
@@ -22,6 +23,7 @@ RUN_AUTOREMOVE=0
 CONFIGURE_DNS=1
 STATE_DIR=""
 TX_SERVICE=""
+BACKUP_DIR=""
 TX_FILES=()
 
 WARNINGS=()
@@ -30,6 +32,7 @@ PASSED_CHECKS=()
 VALID_KEY_TYPES=()
 DETECTED_SSH_PORTS=()
 CURRENT_SSH_PORT=""
+SSH_CONTEXTS=()
 UFW_GUARD=""
 declare -A APT_UNIT_ENABLED=() APT_UNIT_ACTIVE=()
 
@@ -68,6 +71,10 @@ Usage:
   sudo bash vps-bootstrap-ubuntu24.sh [options]
 
 Supported: Ubuntu Server 24.04 LTS and Ubuntu Server 26.04 LTS
+
+Root authorized_keys is replaced exclusively with SSH ID @proms and two YubiKeys.
+Previous keys are backed up under /root/backups/vps-bootstrap for console recovery.
+After bootstrap, refresh keys with: sudo update-sshid-proms
 
 Options:
   --ssh-port PORT        SSH port(s) for fail2ban only, comma-separated. Default: auto.
@@ -121,14 +128,61 @@ require_root() {
   [[ "${EUID}" -eq 0 ]] || die "Run as root: sudo bash $0"
 }
 
+ensure_backup_dir() {
+  local directory
+  [[ -z "$BACKUP_DIR" ]] || return 0
+  for directory in /var/backups /var/backups/vps-bootstrap; do
+    [[ ! -L "$directory" ]] || die "Refusing symlinked backup directory: $directory"
+  done
+  install -d -m 700 -o root -g root /var/backups/vps-bootstrap
+  BACKUP_DIR=$(mktemp -d "/var/backups/vps-bootstrap/$(date +%Y%m%d-%H%M%S)-$$.XXXXXX")
+}
+
 backup_file() {
-  local f="$1"
-  # Config writes below are in-place; backing up only a symlink would not
-  # preserve its target. resolv.conf is replaced as a link, never written through.
+  local f="$1" destination
   [[ ! -L "$f" || "$f" == /etc/resolv.conf ]] || die "Refusing to overwrite symlinked config: $f"
   if [[ -e "$f" || -L "$f" ]]; then
-    cp -a "$f" "${f}.bak.$(date +%Y%m%d-%H%M%S).$$"
+    ensure_backup_dir
+    destination="$BACKUP_DIR/${f#/}"
+    install -d -m 700 "${destination%/*}"
+    # Keep the first original from this invocation, preserving metadata/links.
+    if [[ ! -e "$destination" && ! -L "$destination" ]]; then
+      cp -a -- "$f" "$destination"
+    fi
   fi
+}
+
+
+# Move only backups with the exact old bootstrap naming scheme and known paths.
+# Unknown administrator backup files are never glob-deleted or modified.
+migrate_legacy_backups() {
+  local file old suffix destination
+  local -a managed=(
+    /etc/ssh/sshd_config /etc/ssh/sshd_config.d/00-proms-hardening.conf
+    /etc/systemd/resolved.conf.d/90-proms-dot.conf /etc/resolv.conf
+    /etc/sysctl.d/99-proms-network.conf /etc/apt/apt.conf.d/20auto-upgrades
+    /etc/apt/apt.conf.d/90-proms-unattended-upgrades
+    /etc/systemd/system/apt-daily.timer.d/90-proms-schedule.conf
+    /etc/systemd/system/apt-daily-upgrade.timer.d/90-proms-schedule.conf
+    /etc/default/ufw /etc/ufw/ufw.conf /etc/ufw/user.rules /etc/ufw/user6.rules
+    /etc/fail2ban/fail2ban.local /etc/fail2ban/jail.d/sshd.local
+  )
+  for file in "${managed[@]}"; do
+    for old in "$file".bak.*; do
+      [[ -f "$old" || -L "$old" ]] || continue
+      suffix="${old#"$file.bak."}"
+      [[ "$suffix" =~ ^[0-9]{8}-[0-9]{6}\.[0-9]+$ ]] || continue
+      # Allocate a root-only destination, preserving the original file metadata.
+      # Legacy symlink backups are moved, never written through.
+      if [[ -z "$BACKUP_DIR" ]]; then
+        ensure_backup_dir
+      fi
+      destination="$BACKUP_DIR/legacy/${old#/}"
+      install -d -m 700 "${destination%/*}"
+      mv -- "$old" "$destination"
+      log "Moved legacy bootstrap backup out of config directory: $old"
+    done
+  done
 }
 
 # Save exact originals, including symlinks, until validation and activation succeed.
@@ -220,6 +274,156 @@ check_os() {
     *) die "Unsupported Ubuntu release or inconsistent os-release: VERSION_ID=${VERSION_ID:-missing}, VERSION_CODENAME=${VERSION_CODENAME:-missing}; expected 24.04/noble or 26.04/resolute" ;;
   esac
   pass_check "OS: ${PRETTY_NAME:-Ubuntu}, version=$VERSION_ID, codename=$VERSION_CODENAME"
+}
+
+# Emit one standalone implementation: bootstrap and future updates use this file.
+write_proms_key_updater() {
+  cat <<'UPDATER'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+set +x
+umask 077
+export LC_ALL=C
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+# Source data reviewed from update-sshid-proms.sh; never execute a remote script.
+URL='https://sshid.io/proms/ECDSA-SK?source=authorized-keys'
+SSHID_BEGIN='# BEGIN SSH ID @proms - managed by update-sshid-proms'
+SSHID_END='# END SSH ID @proms - managed by update-sshid-proms'
+STATIC_BEGIN='# BEGIN LUMA YUBIKEY @proms - managed by update-sshid-proms'
+STATIC_END='# END LUMA YUBIKEY @proms - managed by update-sshid-proms'
+STATIC_KEY_1='sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAICT1pndCo1Fuowwt7I668hgEqeNqmtg9b4QXM6YNlL99AAAABHNzaDo= YubiKey Security Key SSH'
+STATIC_KEY_2='sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIM8rMzeMPXF5mRMyYkFMDiQAeNCJ4c0PhEH/jEOsChKWAAAABHNzaDo= YubiKey Security Key SSH #2'
+SSH_DIR=/root/.ssh
+AUTH_KEYS="$SSH_DIR/authorized_keys"
+WORK=''
+cleanup() { [[ -z "$WORK" ]] || rm -rf -- "$WORK"; }
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+[[ $EUID -eq 0 ]] || die 'Run update-sshid-proms as root'
+[[ $# -eq 0 ]] || die 'Usage: sudo update-sshid-proms (replaces all active root authorized_keys with Proms keys)'
+for cmd in curl ssh-keygen flock mktemp install cmp cp mv chmod chown grep tr date; do
+  command -v "$cmd" >/dev/null || die "Required command not found: $cmd"
+done
+[[ ! -L "$SSH_DIR" && ! -L "$AUTH_KEYS" ]] || die 'Refusing symlinked SSH directory/authorized_keys'
+[[ ! -e "$AUTH_KEYS" || -f "$AUTH_KEYS" ]] || die 'authorized_keys must be a regular file'
+install -d -m 700 -o root -g root "$SSH_DIR"
+[[ ! -L "$SSH_DIR/.update-sshid-proms.lock" ]] || die 'Refusing symlinked key-update lock'
+exec 8>"$SSH_DIR/.update-sshid-proms.lock"
+flock -x 8
+# Recheck under the shared lock. Do not create/touch authorized_keys on failure.
+[[ ! -L "$AUTH_KEYS" && ( ! -e "$AUTH_KEYS" || -f "$AUTH_KEYS" ) ]] || die 'Unsafe authorized_keys path'
+WORK=$(mktemp -d "$SSH_DIR/.proms-keys.XXXXXX")
+key_id() {
+  local type blob rest
+  read -r type blob rest <<< "$1"
+  case "$type" in
+    ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521|sk-ssh-ed25519@openssh.com|sk-ecdsa-sha2-nistp256@openssh.com) ;;
+    *) return 1 ;;
+  esac
+  [[ "$blob" =~ ^[A-Za-z0-9+/=]+$ ]] || return 1
+  printf '%s %s\n' "$type" "$blob"
+}
+validate_key() {
+  local id
+  id=$(key_id "$1") || die 'Malformed/unsupported public key (material omitted)'
+  printf '%s\n' "$id" > "$WORK/one"
+  ssh-keygen -lf "$WORK/one" >/dev/null 2>&1 || die 'OpenSSH rejected a public key (material omitted)'
+  printf '%s\n' "$id"
+}
+: > "$WORK/static"
+for key in "$STATIC_KEY_1" "$STATIC_KEY_2"; do
+  id=$(validate_key "$key")
+  [[ "$id" == sk-* ]] || die 'Expected a FIDO2 static key'
+  ! grep -Fqx -- "$id" "$WORK/static" || die 'Duplicate static FIDO2 keys'
+  printf '%s\n' "$id" >> "$WORK/static"
+done
+printf 'Downloading SSH ID @proms...\n'
+if ! curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --silent --show-error \
+     --location --retry 2 --connect-timeout 10 --max-time 30 "$URL" > "$WORK/raw"; then
+  die 'SSH ID download failed; authorized_keys unchanged'
+fi
+tr -d '\r' < "$WORK/raw" > "$WORK/lines"
+: > "$WORK/dynamic"
+while IFS= read -r line || [[ -n "$line" ]]; do
+  [[ "$line" =~ ^[[:space:]]*$ || "$line" =~ ^[[:space:]]*# ]] && continue
+  # Validate every received key, including duplicate entries, before deduplication.
+  id=$(validate_key "$line")
+  grep -Fqx -- "$id" "$WORK/dynamic" || printf '%s\n' "$id" >> "$WORK/dynamic"
+done < "$WORK/lines"
+[[ -s "$WORK/dynamic" ]] || die 'SSH ID returned no valid keys; authorized_keys unchanged'
+{
+  printf '%s\n' "$SSHID_BEGIN"
+  cat "$WORK/dynamic"
+  printf '%s\n\n%s\n' "$SSHID_END" "$STATIC_BEGIN"
+  while IFS= read -r id; do
+    grep -Fqx -- "$id" "$WORK/dynamic" || printf '%s\n' "$id"
+  done < "$WORK/static"
+  printf '%s\n' "$STATIC_END"
+} > "$WORK/new"
+# Verify the final assembled set, including both mandatory static identities.
+while IFS= read -r id; do
+  grep -Fqx -- "$id" "$WORK/new" || die 'Required FIDO2 identity missing from assembled keys'
+done < "$WORK/static"
+count=0
+while IFS= read -r line; do
+  [[ "$line" =~ ^[[:space:]]*$ || "$line" == \#* ]] && continue
+  validate_key "$line" >/dev/null
+  count=$((count + 1))
+done < "$WORK/new"
+chmod 600 "$WORK/new"
+chown root:root "$WORK/new"
+if cmp -s "$AUTH_KEYS" "$WORK/new"; then
+  chmod 600 "$AUTH_KEYS"
+  chown root:root "$AUTH_KEYS"
+  printf 'Proms authorized_keys unchanged (%s active keys).\n' "$count"
+else
+  if [[ -e "$AUTH_KEYS" ]]; then
+    for directory in /root/backups /root/backups/vps-bootstrap; do
+      [[ ! -L "$directory" ]] || die 'Refusing symlinked SSH backup directory'
+      install -d -m 700 -o root -g root "$directory"
+    done
+    backup=$(mktemp -d "/root/backups/vps-bootstrap/$(date +%Y%m%d-%H%M%S)-$$.XXXXXX")
+    cp -- "$AUTH_KEYS" "$backup/root-keys.saved"
+    chmod 600 "$backup/root-keys.saved"
+    chown root:root "$backup/root-keys.saved"
+    printf 'Previous keys saved for console recovery: %s/root-keys.saved\n' "$backup"
+  fi
+  # Both paths are below .ssh: rename is atomic and cannot expose an empty file.
+  mv -fT -- "$WORK/new" "$AUTH_KEYS"
+  printf 'Proms authorized_keys replaced (%s active keys); provider/unknown keys removed.\n' "$count"
+fi
+printf 'Active key fingerprints (no key bodies):\n'
+ssh-keygen -lf "$AUTH_KEYS" -E sha256
+UPDATER
+}
+
+provision_proms_ssh_keys() {
+  log "Provision exclusive Proms SSH keys before upgrades and SSH/firewall changes"
+  # Minimal prerequisites only. Full package operations follow key provisioning.
+  local -a prerequisites=()
+  command -v curl >/dev/null || prerequisites+=(curl)
+  command -v ssh-keygen >/dev/null || prerequisites+=(openssh-client)
+  command -v flock >/dev/null || prerequisites+=(util-linux)
+  [[ -s /etc/ssl/certs/ca-certificates.crt ]] || prerequisites+=(ca-certificates)
+  if (( ${#prerequisites[@]} )); then
+    apt_update
+    apt-get -o DPkg::Lock::Timeout=600 --no-remove -y install "${prerequisites[@]}"
+  fi
+  write_proms_key_updater > "$STATE_DIR/update-sshid-proms"
+  chmod 700 "$STATE_DIR/update-sshid-proms"
+  bash "$STATE_DIR/update-sshid-proms" || die "SSH provisioning failed; refusing to continue bootstrap"
+  install -d -m 755 /usr/local/sbin
+  backup_file /usr/local/sbin/update-sshid-proms
+  local staged
+  staged=$(mktemp /usr/local/sbin/.update-sshid-proms.XXXXXX)
+  if ! install -m 700 -o root -g root "$STATE_DIR/update-sshid-proms" "$staged" ||
+     ! mv -fT -- "$staged" /usr/local/sbin/update-sshid-proms; then
+    rm -f -- "$staged"
+    die "Could not install local key updater"
+  fi
+  pass_check "Exclusive Proms SSH keys provisioned; local updater: sudo update-sshid-proms"
 }
 
 check_root_authorized_keys() {
@@ -480,6 +684,13 @@ configure_ssh() {
   local config=/etc/ssh/sshd_config dropin=/etc/ssh/sshd_config.d/00-proms-hardening.conf effective
   local remote _rport localaddr localport
   sshd -t || die "Existing SSH configuration is invalid"
+  local -a contexts=()
+  if [[ -n "${SSH_CONNECTION:-}" ]]; then
+    contexts=("$SSH_CONNECTION")
+  else
+    detect_ssh_ports || die "Cannot safely determine SSH context before validating Match rules"
+    contexts=("${SSH_CONTEXTS[@]}")
+  fi
   # Recheck after package operations, which can take a long time.
   check_root_authorized_keys
   install -d -m 755 /etc/ssh/sshd_config.d
@@ -501,13 +712,18 @@ X11Forwarding no
 EOF
   chmod 644 "$dropin"
   sshd -t || die "New SSH config invalid; restoring original files"
+  effective="$(sshd -T)"
+  ssh_policy_ok "$effective" || die "Base SSH policy conflicts with key-only login; restoring original files"
   effective="$(sshd -T -C user=root,host=localhost,addr=127.0.0.1)"
   ssh_policy_ok "$effective" || die "Root SSH policy conflicts with key-only login; restoring original files"
-  if [[ -n "${SSH_CONNECTION:-}" ]]; then
-    read -r remote _rport localaddr localport <<< "$SSH_CONNECTION"
+  local context
+  # Exact session when known; otherwise every established SSH candidate from
+  # the conservative listener fallback, so sudo cannot bypass Match validation.
+  for context in "${contexts[@]}"; do
+    read -r remote _rport localaddr localport <<< "$context"
     effective="$(sshd -T -C "user=root,host=$remote,addr=$remote,laddr=$localaddr,lport=$localport")"
-    ssh_policy_ok "$effective" || die "SSH Match rules conflict for current client; restoring original files"
-  fi
+    ssh_policy_ok "$effective" || die "SSH Match rules conflict for current/candidate client; restoring original files"
+  done
   if grep -Eq '^(allowusers|denyusers|allowgroups|denygroups) ' <<< "$effective"; then
     warn "SSH access lists are present; they are preserved and still apply"
   fi
@@ -804,7 +1020,7 @@ detect_ssh_ports() {
     [[ -n "$socket" ]] || return 1
   fi
   ss -H -ltnp > "$STATE_DIR/ssh-listeners" || return 1
-  ss -H -tnp > "$STATE_DIR/ssh-connections" || return 1
+  ss -H -tnpe > "$STATE_DIR/ssh-connections" || return 1
   python3 - "$effective" "$socket" "${SSH_CONNECTION:-}" "$STATE_DIR" <<'PY' || return 1
 import ipaddress, os, pathlib, re, sys
 effective, socket, connection, directory = sys.argv[1:]
@@ -837,6 +1053,10 @@ for line in (root / 'ssh-listeners').read_text().splitlines():
 if not expected.issubset(live):
     raise ValueError('Configured SSH ports are not confirmed by live TCP listeners')
 current = '-'
+contexts = []
+def context_for(item):
+    lh, lp, rh, rp = item
+    return f'{rh} {rp} {lh} {lp}'
 if connection:
     remote, rp, local, lp = connection.split()  # Reject missing/extra fields.
     rp, lp = port(rp), port(lp)
@@ -854,23 +1074,68 @@ if connection:
     if not matched:
         raise ValueError('SSH_CONNECTION is not confirmed by an established sshd connection')
     current = str(lp)
+    contexts = [connection]
 else:
-    # sudo may discard SSH_CONNECTION. Do not mistake that for a local console.
+    # sudo often strips SSH_CONNECTION. Tie an established socket to an SSH
+    # ancestor by kernel inode or PID, not to an arbitrary user's SSH session.
     pid = os.getppid()
-    seen = set()
+    seen, ancestors, inodes = set(), set(), set()
     remote_context = bool(os.environ.get('SSH_CLIENT') or os.environ.get('SSH_TTY'))
     while pid > 1 and pid not in seen:
         seen.add(pid)
-        status = pathlib.Path('/proc', str(pid), 'status').read_text()
+        process = pathlib.Path('/proc', str(pid))
+        status = (process / 'status').read_text()
         name = re.search(r'^Name:\s*(.*)$', status, re.M).group(1)
-        remote_context |= name.startswith('sshd')
+        if name.startswith('sshd'):
+            remote_context = True
+            ancestors.add(pid)
+            try:
+                for fd in (process / 'fd').iterdir():
+                    try:
+                        match = re.fullmatch(r'socket:\[(\d+)\]', os.readlink(fd))
+                        if match:
+                            inodes.add(match[1])
+                    except FileNotFoundError:
+                        pass  # A descriptor may close while ss/proc is sampled.
+            except PermissionError:
+                pass  # The bounded listener fallback below must still validate.
         pid = int(re.search(r'^PPid:\s*(\d+)$', status, re.M).group(1))
     if remote_context:
-        raise ValueError('Remote SSH context found but SSH_CONNECTION is missing')
+        matches, established_ports, candidates = set(), set(), set()
+        for line in (root / 'ssh-connections').read_text().splitlines():
+            f = line.split()
+            if len(f) < 6 or f[0] != 'ESTAB' or '"sshd' not in line:
+                continue
+            lh, lp = endpoint(f[3]); rh, rp = endpoint(f[4])
+            established_ports.add(lp)
+            candidates.add((lh, lp, rh, rp))
+            owners = {int(p) for p in re.findall(r'pid=(\d+)', line)}
+            inode = re.search(r'\bino:(\d+)', line)
+            if owners & ancestors or (inode and inode[1] in inodes):
+                matches.add((lh, lp, rh, rp))
+        if len(matches) == 1:
+            lp = next(iter(matches))[1]
+            if lp not in expected:
+                raise ValueError('Ancestor SSH socket disagrees with live listeners')
+            current = str(lp)
+            contexts = [context_for(next(iter(matches)))]
+            print('Current SSH connection recovered from ancestor socket/PID: TCP ' + current, file=sys.stderr)
+        elif (ancestors and 1 <= len(expected) <= 8 and expected == configured
+              and live == expected and established_ports and established_ports <= expected):
+            # No exact tuple: allow every small, unanimously confirmed listener.
+            # Also reject legacy sessions on ports that no longer listen.
+            current = 'confirmed-listeners'
+            contexts = [context_for(item) for item in sorted(candidates)]
+            print('Exact sudo SSH tuple unavailable; allowing all confirmed SSH TCP ports: '
+                  + ','.join(map(str, sorted(expected))), file=sys.stderr)
+        else:
+            raise ValueError('Cannot recover current SSH socket or a bounded, consistent listener set')
+(root / 'ssh-contexts').write_text(''.join(c + '\n' for c in contexts), newline='\n')
 (root / 'ssh-ports').write_text(current + '\n' + ''.join(str(p)+'\n' for p in sorted(expected)), newline='\n')
 PY
   local -a result
   mapfile -t result < "$STATE_DIR/ssh-ports"
+  mapfile -t SSH_CONTEXTS < "$STATE_DIR/ssh-contexts"
   CURRENT_SSH_PORT="${result[0]}"
   DETECTED_SSH_PORTS=("${result[@]:1}")
   [[ ${#DETECTED_SSH_PORTS[@]} -gt 0 ]]
@@ -920,6 +1185,7 @@ PY
 
 verify_ufw() {
   local status
+  grep -Eq '^IPV6=yes$' /etc/default/ufw || return 1
   status="$(ufw status verbose)" || return 1
   grep -qx 'Status: active' <<< "$status" || return 1
   grep -q '^Default: deny (incoming), allow (outgoing),' <<< "$status" || return 1
@@ -950,7 +1216,12 @@ configure_ufw() {
     return 0
   fi
   if grep -qx 'Status: active' <<< "$status"; then
-    pass_check "UFW already active: all firewall configuration skipped, existing rules and policies preserved"
+    # Read-only audit: never rewrite an administrator's active firewall.
+    if detect_ssh_ports && verify_ufw; then
+      pass_check "Existing UFW verified: boot enabled, deny incoming/allow outgoing, IPv4/IPv6 SSH allows; rules unchanged"
+    else
+      fail_check "Active UFW does not pass SSH/defaults/IPv4/IPv6/boot checks; manual review required, firewall unchanged"
+    fi
     return 0
   fi
   if ! grep -qx 'Status: inactive' <<< "$status"; then
@@ -1116,6 +1387,10 @@ final_report() {
   echo
   echo "SSH effective settings:"
   sshd -T 2>/dev/null | awk '/^(pubkeyauthentication|passwordauthentication|kbdinteractiveauthentication|permitemptypasswords|permitrootlogin|x11forwarding|authenticationmethods|authorizedkeysfile|pubkeyacceptedalgorithms|port) / {print "  " $0}' || true
+  echo "  Active authorized keys: $(grep -cE '^(ssh-|ecdsa-|sk-)' /root/.ssh/authorized_keys || true)"
+  ssh-keygen -lf /root/.ssh/authorized_keys -E sha256 || true
+  echo "SSH configuration snippets (preserved):"
+  find /etc/ssh/sshd_config.d -maxdepth 1 -name '*.conf' -printf '  %f\n' | sort
   echo "  Validated SSH key types:"
   printf '    %s\n' "${VALID_KEY_TYPES[@]}" | sort -u
   echo "SSH listening sockets:"
@@ -1213,6 +1488,8 @@ main() {
   flock -n 9 || die "Another bootstrap instance is running"
   STATE_DIR="$(mktemp -d /run/vps-bootstrap-proms.XXXXXX)"
   chmod 700 "$STATE_DIR"
+  provision_proms_ssh_keys
+  migrate_legacy_backups
   check_root_authorized_keys
   apt_install_base_packages
   set_timezone
@@ -1226,7 +1503,12 @@ main() {
   configure_unattended_upgrades
   configure_ufw
   configure_fail2ban
-  final_report
+  # An expected FAILED CHECK is not an unexpected command failure.
+  if final_report; then
+    return 0
+  else
+    exit 1
+  fi
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
