@@ -6,7 +6,8 @@ umask 022
 export LC_ALL=C
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 
-# Ubuntu 24.04 LTS VPS bootstrap.
+# Ubuntu Server 24.04 LTS (noble) and 26.04 LTS (resolute) VPS bootstrap.
+# Keep this filename for compatibility with existing download URLs.
 # Target: safe SSH hardening, DNS-over-TLS, Ubuntu Pro/Livepatch, unattended upgrades with 04:38 reboot,
 # fail2ban, UFW, fixed APT timers and basic network tuning for proxy workloads.
 # Requirements: run as root; /root/.ssh/authorized_keys must already contain your public key.
@@ -49,6 +50,7 @@ warn() {
 
 fail_check() {
   FAILED_CHECKS+=("$1")
+  printf '\nFAILED CHECK: %s\n' "$1" >&2
 }
 
 pass_check() {
@@ -64,6 +66,8 @@ usage() {
   cat <<'USAGE'
 Usage:
   sudo bash vps-bootstrap-ubuntu24.sh [options]
+
+Supported: Ubuntu Server 24.04 LTS and Ubuntu Server 26.04 LTS
 
 Options:
   --ssh-port PORT        SSH port(s) for fail2ban only, comma-separated. Default: auto.
@@ -152,6 +156,7 @@ commit_transaction() {
 
 rollback_transaction() {
   local i service="$TX_SERVICE"
+  log "Rollback: restoring previous $service configuration"
   if [[ "$service" == ufw ]]; then
     # Only entered for a firewall that was inactive before this transaction.
     ufw --force disable || return 1
@@ -170,6 +175,7 @@ rollback_transaction() {
     apt-timers) restore_apt_units || return 1 ;;
   esac
   commit_transaction
+  log "Rollback completed: $service"
 }
 
 finish() {
@@ -204,13 +210,16 @@ validate_inputs() {
 
 check_os() {
   [[ -r /etc/os-release ]] || die "/etc/os-release not found"
+  unset ID VERSION_ID VERSION_CODENAME PRETTY_NAME
   # shellcheck disable=SC1091
   . /etc/os-release
 
-  [[ "${ID:-}" == "ubuntu" ]] || die "This script is intended for Ubuntu 24.04 LTS; detected: ${PRETTY_NAME:-unknown}"
-  [[ "${VERSION_ID:-}" == "24.04" ]] || die "This script is intended for Ubuntu 24.04 LTS; detected: ${PRETTY_NAME:-unknown}"
-
-  pass_check "OS: ${PRETTY_NAME:-Ubuntu 24.04}"
+  [[ "${ID:-}" == ubuntu ]] || die "Supported: Ubuntu Server 24.04 LTS and 26.04 LTS; detected ID=${ID:-missing}"
+  case "${VERSION_ID:-}:${VERSION_CODENAME:-}" in
+    24.04:noble|26.04:resolute) ;;
+    *) die "Unsupported Ubuntu release or inconsistent os-release: VERSION_ID=${VERSION_ID:-missing}, VERSION_CODENAME=${VERSION_CODENAME:-missing}; expected 24.04/noble or 26.04/resolute" ;;
+  esac
+  pass_check "OS: ${PRETTY_NAME:-Ubuntu}, version=$VERSION_ID, codename=$VERSION_CODENAME"
 }
 
 check_root_authorized_keys() {
@@ -312,7 +321,9 @@ if sys.argv[1] == "attached":
 else:
     services=d["services"]
     s=next((s for s in services if s["name"] == sys.argv[1]), {})
-    print(s.get("status", "missing"))
+    state = s.get("status", "missing")
+    # Both supported Pro clients use a Unicode em dash for not entitled.
+    print("unavailable" if state == "\u2014" else state)
 ' "$1"
 }
 
@@ -456,6 +467,8 @@ ssh_policy_ok() {
   grep -qx 'pubkeyauthentication yes' <<< "$effective" &&
   grep -qx 'passwordauthentication no' <<< "$effective" &&
   grep -qx 'kbdinteractiveauthentication no' <<< "$effective" &&
+  grep -qx 'permitemptypasswords no' <<< "$effective" &&
+  grep -qx 'x11forwarding no' <<< "$effective" &&
   grep -Eq '^permitrootlogin (without-password|prohibit-password)$' <<< "$effective" &&
   grep -Eq '^authenticationmethods (any|publickey)$' <<< "$effective" &&
   grep -Eq '^authorizedkeysfile .*' <<< "$effective" &&
@@ -733,7 +746,7 @@ Unattended-Upgrade::Allowed-Origins {
   "${distro_id}ESM:${distro_codename}-infra-security";
 };
 EOF
-  if ! python3 - "$AUTO_REBOOT_TIME" <<'PY'
+  if ! python3 - "$AUTO_REBOOT_TIME" "$VERSION_CODENAME" <<'PY'
 import apt_pkg, sys
 apt_pkg.init()
 c = apt_pkg.config
@@ -746,13 +759,14 @@ expected = {
     "Unattended-Upgrade::Automatic-Reboot-Time": sys.argv[1],
 }
 bad = [k for k, v in expected.items() if c.find(k).lower() != v]
-required = {
-    "${distro_id}:${distro_codename}-security",
-    "${distro_id}:${distro_codename}-updates",
-    "${distro_id}ESMApps:${distro_codename}-apps-security",
-    "${distro_id}ESM:${distro_codename}-infra-security",
-}
-if not required.issubset(set(c.value_list("Unattended-Upgrade::Allowed-Origins"))):
+def expand(value):
+    return value.replace("${distro_id}", "Ubuntu").replace("${distro_codename}", sys.argv[2])
+required = {"Ubuntu:" + sys.argv[2] + "-security", "Ubuntu:" + sys.argv[2] + "-updates",
+            "UbuntuESMApps:" + sys.argv[2] + "-apps-security",
+            "UbuntuESM:" + sys.argv[2] + "-infra-security"}
+origins = {expand(v) for v in c.value_list("Unattended-Upgrade::Allowed-Origins")}
+print("Effective Allowed-Origins for " + sys.argv[2] + ": " + ", ".join(sorted(origins)))
+if not required.issubset(origins):
     bad.append("Unattended-Upgrade::Allowed-Origins")
 if bad:
     print("Conflicting effective APT options: " + ", ".join(bad), file=sys.stderr)
@@ -1018,7 +1032,7 @@ configure_fail2ban() {
 
   if [[ "$SSH_PORT" == auto ]]; then
     SSH_PORT="$(sshd -T | awk '$1 == "port" {print $2}' | paste -sd, -)"
-    # Ubuntu 24.04 may use ssh.socket; include its actual listener ports too.
+    # Both supported Ubuntu LTS releases may use ssh.socket.
     if systemctl is-active --quiet ssh.socket; then
       local socket_ports
       socket_ports="$(systemctl show ssh.socket -p Listen --value | grep -oE '[0-9]+ \(Stream\)' | awk '{print $1}' | paste -sd, - || true)"
@@ -1092,6 +1106,8 @@ final_report() {
   log "Final report"
 
   echo "System:"
+  echo "  Ubuntu version: ${VERSION_ID:-unknown}"
+  echo "  Codename: ${VERSION_CODENAME:-unknown}"
   echo "  Hostname: $(hostname -f 2>/dev/null || hostname)"
   echo "  Kernel: $(uname -r)"
   echo "  Time: $(date '+%Y-%m-%d %H:%M:%S %Z %z')"
@@ -1099,12 +1115,18 @@ final_report() {
 
   echo
   echo "SSH effective settings:"
-  sshd -T 2>/dev/null | awk '/^(pubkeyauthentication|passwordauthentication|kbdinteractiveauthentication|permitrootlogin|x11forwarding) / {print "  " $0}' || true
+  sshd -T 2>/dev/null | awk '/^(pubkeyauthentication|passwordauthentication|kbdinteractiveauthentication|permitemptypasswords|permitrootlogin|x11forwarding|authenticationmethods|authorizedkeysfile|pubkeyacceptedalgorithms|port) / {print "  " $0}' || true
+  echo "  Validated SSH key types:"
+  printf '    %s\n' "${VALID_KEY_TYPES[@]}" | sort -u
+  echo "SSH listening sockets:"
+  ss -H -ltnp 2>/dev/null | awk '/"sshd|"systemd"/ {print "  " $0}' || true
+  systemctl show ssh.socket -p ActiveState -p Listen --no-pager 2>/dev/null || true
 
   echo
   echo "DNS summary:"
   resolvectl dns 2>/dev/null | sed 's/^/  /' || true
   resolvectl domain 2>/dev/null | sed 's/^/  /' || true
+  resolvectl status --no-pager 2>/dev/null || true
 
   echo
   echo "Network sysctl:"
@@ -1115,6 +1137,8 @@ final_report() {
   systemctl is-enabled unattended-upgrades 2>/dev/null | sed 's/^/  unattended-upgrades enabled: /' || true
   systemctl is-active unattended-upgrades 2>/dev/null | sed 's/^/  unattended-upgrades active: /' || true
   echo "  automatic reboot time: ${AUTO_REBOOT_TIME} (${TIMEZONE})"
+  echo "Effective APT settings and origins (templates are expanded by unattended-upgrades):"
+  apt-config dump | awk '/^(APT::Periodic::|Unattended-Upgrade::(Allowed-Origins|Automatic-Reboot))/ {print "  " $0}' || true
   systemctl list-timers apt-daily.timer apt-daily-upgrade.timer --all --no-pager || true
 
   echo
@@ -1124,11 +1148,12 @@ final_report() {
 
   echo
   echo "Ubuntu Pro status:"
-  pro status 2>/dev/null | sed 's/^/  /' || true
+  pro status --all | sed 's/^/  /' || true
 
   echo
   echo "fail2ban status:"
   fail2ban-client status sshd 2>/dev/null | sed 's/^/  /' || true
+  fail2ban-client status recidive 2>/dev/null | sed 's/^/  /' || true
 
   echo
   echo "Passed checks:"
@@ -1207,3 +1232,4 @@ main() {
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   main "$@"
 fi
+
