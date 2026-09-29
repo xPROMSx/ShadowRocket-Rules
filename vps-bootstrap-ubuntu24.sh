@@ -223,7 +223,12 @@ rollback_transaction() {
     fi
   done
   case "$service" in
-    ssh) systemctl reload ssh || warn "Could not reload restored SSH configuration" ;;
+    ssh)
+      if ! apply_ssh_runtime_config; then
+        warn "SSH rollback restored files but could not verify a working listener; manual recovery required"
+        return 1
+      fi
+      ;;
     systemd-resolved) systemctl restart systemd-resolved || warn "Could not restart restored DNS" ;;
     fail2ban) systemctl restart fail2ban || warn "Could not restart restored fail2ban" ;;
     apt-timers) restore_apt_units || return 1 ;;
@@ -706,6 +711,23 @@ ensure_sshd_runtime_dir() {
     die "OpenSSH runtime directory verification failed: expected root:root mode 0755"
 }
 
+apply_ssh_runtime_config() {
+  # Authentication-only changes: preserve the existing listener architecture.
+  # Port/ListenAddress changes would need separate socket/generator handling.
+  if systemctl is-active --quiet ssh.socket; then
+    detect_ssh_ports || return 1
+    systemctl is-active --quiet ssh.socket || return 1
+  elif systemctl is-active --quiet ssh.service; then
+    systemctl reload ssh.service || return 1
+    systemctl is-active --quiet ssh.service || return 1
+    detect_ssh_ports || return 1
+    systemctl is-active --quiet ssh.service || return 1
+  else
+    printf '%s\n' 'No active OpenSSH listener unit (ssh.socket/ssh.service); refusing to change SSH activation mode automatically' >&2
+    return 1
+  fi
+}
+
 configure_ssh() {
   log "Validate and apply key-only SSH authentication"
   local config=/etc/ssh/sshd_config dropin=/etc/ssh/sshd_config.d/00-proms-hardening.conf effective
@@ -755,9 +777,9 @@ EOF
   if grep -Eq '^(allowusers|denyusers|allowgroups|denygroups) ' <<< "$effective"; then
     warn "SSH access lists are present; they are preserved and still apply"
   fi
-  systemctl reload ssh || die "SSH reload failed; restoring original files"
+  apply_ssh_runtime_config || die "SSH runtime validation/reload failed; restoring original files"
   commit_transaction
-  pass_check "SSH syntax and effective root key-only policy validated before reload"
+  pass_check "SSH syntax, effective root key-only policy and active listener verified"
   warn "A local key check cannot prove remote login. Test a second session with both SSH ID and YubiKey before closing this one; other Match contexts may differ"
 }
 
