@@ -34,6 +34,9 @@ DETECTED_SSH_PORTS=()
 CURRENT_SSH_PORT=""
 SSH_CONTEXTS=()
 UFW_GUARD=""
+BOOTSTRAP_IPV4=not-tested
+PROVIDER_IPV6=not-tested
+IPV4_FALLBACK=not-used
 declare -A APT_UNIT_ENABLED=() APT_UNIT_ACTIVE=()
 
 trap 'printf "ERROR at line %s (command omitted to protect secrets)\n" "$LINENO" >&2' ERR
@@ -240,13 +243,14 @@ rollback_transaction() {
 finish() {
   local rc=$?
   trap - EXIT
+  cleanup_ipv6_guard || rc=1
   if [[ -n "$TX_SERVICE" ]]; then
     if ! rollback_transaction; then
       printf 'Rollback incomplete. Recovery files retained in %s\n' "$STATE_DIR" >&2
       exit 1
     fi
   fi
-  if [[ -n "$STATE_DIR" ]]; then
+  if [[ -n "$STATE_DIR" && ! -f "$STATE_DIR/ipv6-route-owned" ]]; then
     rm -rf -- "$STATE_DIR"
   fi
   exit "$rc"
@@ -536,6 +540,128 @@ else:
 ' "$1"
 }
 
+cleanup_ipv6_guard() {
+  [[ -n "$STATE_DIR" && -f "$STATE_DIR/ipv6-route-owned" ]] || return 0
+  if ! ip -6 route del unreachable default metric 1; then
+    warn "Could not remove bootstrap-owned IPv6 guard; inspect: ip -6 route show default. Ownership marker retained in $STATE_DIR"
+    return 1
+  fi
+  rm -f -- "$STATE_DIR/ipv6-route-owned"
+  log "Removed bootstrap-owned temporary IPv6 unreachable route"
+}
+
+probe_bootstrap_https() {
+  # Ignore curlrc/proxies: measure the actual provider address family and TLS.
+  # HTTP error status still proves connectivity; never disable certificate checks.
+  curl -q --noproxy '*' --silent --show-error --output /dev/null \
+    --connect-timeout 4 --max-time 7 --write-out '%{remote_ip} %{time_total}' \
+    "$@" https://contracts.canonical.com/
+}
+
+configure_bootstrap_ipv4_fallback() {
+  log "Probe IPv4/IPv6 connectivity before Ubuntu Pro"
+  local ipv6 dual mode ipv6_rc=0 dual_rc=0
+  if probe_bootstrap_https -4 >/dev/null; then BOOTSTRAP_IPV4=OK; else BOOTSTRAP_IPV4=FAILED; fi
+  if ipv6="$(probe_bootstrap_https -6)"; then PROVIDER_IPV6=OK; else PROVIDER_IPV6=FAILED; fi
+  if [[ "$BOOTSTRAP_IPV4" != OK ]]; then
+    warn "IPv4 connectivity probe failed; temporary IPv6 guard skipped"
+    return 0
+  fi
+  [[ "$PROVIDER_IPV6" != OK ]] || return 0
+  if ! ip -6 -j route show table main exact default > "$STATE_DIR/ipv6-defaults.json" ||
+     ! ip -6 -j address show scope global > "$STATE_DIR/ipv6-addresses.json"; then
+    warn "Cannot inspect IPv6 configuration; temporary guard skipped"
+    return 0
+  fi
+  if ! mode="$(python3 - "$STATE_DIR" <<'PY'
+import json, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+routes = json.loads((root / 'ipv6-defaults.json').read_text())
+addresses = json.loads((root / 'ipv6-addresses.json').read_text())
+if any(r.get('type') == 'unreachable' and r.get('metric') == 1 for r in routes):
+    print('existing')
+elif (any(r.get('type', 'unicast') == 'unicast' for r in routes)
+      and any(a.get('family') == 'inet6' and a.get('scope') == 'global'
+              for link in addresses for a in link.get('addr_info', []))):
+    print('configured')
+else:
+    print('not-configured')
+PY
+  )"; then
+    warn "Cannot parse IPv6 configuration; temporary guard skipped"
+    return 0
+  fi
+  if [[ "$mode" == existing ]]; then
+    warn "Existing administrator IPv6 unreachable default metric 1 preserved; bootstrap will not remove it"
+    return 0
+  fi
+  if [[ "$mode" != configured ]]; then
+    PROVIDER_IPV6=not-configured
+    return 0
+  fi
+  if ! detect_ssh_ports; then
+    warn "Cannot confirm current SSH context; temporary IPv6 guard skipped"
+    return 0
+  fi
+  if [[ ${#SSH_CONTEXTS[@]} -eq 0 && "$CURRENT_SSH_PORT" != '-' ]]; then
+    warn "Current SSH address family is unknown; temporary IPv6 guard skipped"
+    return 0
+  fi
+  if ! python3 - "${SSH_CONTEXTS[@]}" <<'PY'
+import ipaddress, sys
+for context in sys.argv[1:]:
+    remote, _, local, _ = context.split()
+    for value in (remote, local):
+        address = ipaddress.ip_address(value)
+        if (getattr(address, 'ipv4_mapped', None) or address).version != 4:
+            sys.exit(1)
+PY
+  then
+    warn "Current/candidate SSH connection uses IPv6 or has an invalid address; temporary IPv6 guard skipped"
+    return 0
+  fi
+  # Bash waits for this foreground child before handling INT/TERM. Block those
+  # signals in the child across route add + ownership recording, so EXIT cleanup
+  # cannot miss a successfully added route. No separate trap system is installed.
+  if ! python3 - "$STATE_DIR/ipv6-route-owned" <<'PY'
+import os, pathlib, signal, subprocess, sys
+signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT, signal.SIGTERM})
+marker = pathlib.Path(sys.argv[1])
+fd = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+os.close(fd)
+try:
+    subprocess.run(['ip', '-6', 'route', 'add', 'unreachable', 'default', 'metric', '1'], check=True)
+except BaseException:
+    marker.unlink()
+    raise
+PY
+  then
+    warn "Could not add temporary IPv6 guard; existing routes preserved"
+    return 0
+  fi
+  if ipv6="$(probe_bootstrap_https -6)"; then ipv6_rc=0; else ipv6_rc=$?; fi
+  if dual="$(probe_bootstrap_https)"; then dual_rc=0; else dual_rc=$?; fi
+  if python3 - "$ipv6_rc" "$ipv6" "$dual_rc" "$dual" <<'PY'
+import ipaddress, sys
+# A probe reaching its timeout is not proof of a fail-fast network error.
+try:
+    address, elapsed = sys.argv[4].split()
+    valid = (int(sys.argv[1]) not in (0, 28) and float(sys.argv[2].split()[-1]) < 3
+             and int(sys.argv[3]) == 0 and ipaddress.ip_address(address).version == 4
+             and float(elapsed) < 7)
+except (ValueError, IndexError):
+    valid = False
+sys.exit(0 if valid else 1)
+PY
+  then
+    IPV4_FALLBACK=used
+    warn "Provider IPv6 is configured but external IPv6 connectivity failed; bootstrap temporarily used IPv4 fallback. Provider IPv6 routing should be checked."
+  else
+    cleanup_ipv6_guard || die "Could not restore IPv6 routing after failed guard verification"
+    warn "Temporary IPv6 guard did not provide verified fast IPv4 fallback; removed it"
+  fi
+}
+
 configure_ubuntu_pro() {
   log "Check Ubuntu Pro attachment, ESM Infra, ESM Apps and Livepatch"
   local token="${UBUNTU_PRO_TOKEN:-}" status attached service state
@@ -680,8 +806,7 @@ ssh_policy_ok() {
   grep -qx 'x11forwarding no' <<< "$effective" &&
   grep -Eq '^permitrootlogin (without-password|prohibit-password)$' <<< "$effective" &&
   grep -Eq '^authenticationmethods (any|publickey)$' <<< "$effective" &&
-  grep -Eq '^authorizedkeysfile .*' <<< "$effective" &&
-  awk '$1 == "authorizedkeysfile" {for(i=2;i<=NF;i++) if($i == ".ssh/authorized_keys" || $i == "/root/.ssh/authorized_keys" || $i == "%h/.ssh/authorized_keys") found=1} END {exit !found}' <<< "$effective"
+  grep -qx 'authorizedkeysfile .ssh/authorized_keys' <<< "$effective"
 }
 
 check_systemd_manager() {
@@ -754,6 +879,7 @@ configure_ssh() {
   cat > "$dropin" <<'EOF'
 # Managed by vps-bootstrap-ubuntu24.sh
 PubkeyAuthentication yes
+AuthorizedKeysFile .ssh/authorized_keys
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 PermitEmptyPasswords no
@@ -1475,6 +1601,9 @@ final_report() {
   ufw show added || true
 
   echo
+  echo "Bootstrap IPv4 connectivity: $BOOTSTRAP_IPV4"
+  echo "Provider IPv6 connectivity: $PROVIDER_IPV6"
+  echo "Temporary IPv4 fallback: $IPV4_FALLBACK (bootstrap-owned route removed by EXIT cleanup)"
   echo "Ubuntu Pro status:"
   pro status --all | sed 's/^/  /' || true
 
@@ -1545,6 +1674,7 @@ main() {
   migrate_legacy_backups
   check_root_authorized_keys
   apt_install_base_packages
+  configure_bootstrap_ipv4_fallback
   set_timezone
   configure_ubuntu_pro
   # Refresh indexes for newly enabled ESM repositories even with --no-upgrade.
