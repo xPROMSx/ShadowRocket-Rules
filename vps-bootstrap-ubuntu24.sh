@@ -1051,10 +1051,22 @@ verify_apt_timer() {
   [[ "$(systemctl show "$unit" -p AccuracyUSec --value)" == 1s ]] || return 1
   # Check what PID 1 loaded, not just the contents of our drop-in.
   calendar="$(systemctl show "$unit" -p TimersCalendar --value)" || return 1
-  python3 - "$calendar" "$time" <<'PY' || return 1
-import re, sys
+  python3 - "$calendar" "$time" "/etc/systemd/system/$unit.d/90-proms-schedule.conf" <<'PY' || return 1
+import pathlib, re, sys
+clock = '*-*-* ' + sys.argv[2] + ':00'
+expected = clock + ' Europe/Moscow'
+# systemd 255 may omit the timezone in its normalized runtime representation.
+# Require the exact managed calendar (including reset) as independent evidence.
+section, managed = '', []
+for line in pathlib.Path(sys.argv[3]).read_text().splitlines():
+    line = line.strip()
+    if line.startswith('[') and line.endswith(']'):
+        section = line
+    elif section == '[Timer]' and line.startswith('OnCalendar='):
+        managed.append(line.split('=', 1)[1].strip())
+assert managed == ['', expected], managed
 values = re.findall(r'OnCalendar=(.*?)\s*;', sys.argv[1])
-assert values == ['*-*-* ' + sys.argv[2] + ':00 Europe/Moscow'], values
+assert values in ([expected], [clock]), values
 PY
   [[ -z "$(systemctl show "$unit" -p TimersMonotonic --value)" ]] || return 1
   next="$(systemctl show "$unit" -p NextElapseUSecRealtime --value)" || return 1
