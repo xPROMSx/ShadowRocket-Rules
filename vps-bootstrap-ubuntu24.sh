@@ -679,10 +679,38 @@ ssh_policy_ok() {
   awk '$1 == "authorizedkeysfile" {for(i=2;i<=NF;i++) if($i == ".ssh/authorized_keys" || $i == "/root/.ssh/authorized_keys" || $i == "%h/.ssh/authorized_keys") found=1} END {exit !found}' <<< "$effective"
 }
 
+check_systemd_manager() {
+  local version
+  if ! version="$(systemctl --system show --property=Version --value)" || [[ -z "$version" ]]; then
+    die "systemd manager is unavailable after package operations; cannot safely continue configuration"
+  fi
+}
+
+ensure_sshd_runtime_dir() {
+  local directory=/run/sshd config=/usr/lib/tmpfiles.d/openssh-server.conf
+  [[ ! -L "$directory" && ( ! -e "$directory" || -d "$directory" ) ]] ||
+    die "Unsafe OpenSSH runtime path: $directory must be a real directory, not a symlink or file"
+  if [[ -f "$config" ]]; then
+    systemd-tmpfiles --create --prefix="$directory" "$config" ||
+      die "Could not prepare OpenSSH runtime directory through systemd-tmpfiles"
+  fi
+  # Both LTS ssh.service units specify RuntimeDirectory=sshd, mode 0755.
+  # Their tmpfiles config may be absent or only exclude /tmp/sshauth.*.
+  [[ ! -L "$directory" && ( ! -e "$directory" || -d "$directory" ) ]] ||
+    die "Unsafe OpenSSH runtime path after tmpfiles: $directory"
+  if [[ ! -d "$directory" || "$(stat -c '%u:%g:%a' -- "$directory")" != 0:0:755 ]]; then
+    install -d -o root -g root -m 0755 -- "$directory" ||
+      die "Could not restore OpenSSH runtime directory ownership/permissions"
+  fi
+  [[ ! -L "$directory" && -d "$directory" && "$(stat -c '%u:%g:%a' -- "$directory")" == 0:0:755 ]] ||
+    die "OpenSSH runtime directory verification failed: expected root:root mode 0755"
+}
+
 configure_ssh() {
   log "Validate and apply key-only SSH authentication"
   local config=/etc/ssh/sshd_config dropin=/etc/ssh/sshd_config.d/00-proms-hardening.conf effective
   local remote _rport localaddr localport
+  ensure_sshd_runtime_dir
   sshd -t || die "Existing SSH configuration is invalid"
   local -a contexts=()
   if [[ -n "${SSH_CONNECTION:-}" ]]; then
@@ -1014,6 +1042,7 @@ PY
 
 detect_ssh_ports() {
   local socket="" effective
+  ensure_sshd_runtime_dir
   effective="$(sshd -T)" || return 1
   if systemctl is-active --quiet ssh.socket; then
     socket="$(systemctl show ssh.socket -p Listen --value)" || return 1
@@ -1302,6 +1331,7 @@ configure_fail2ban() {
   log "Configure fail2ban for SSH"
 
   if [[ "$SSH_PORT" == auto ]]; then
+    ensure_sshd_runtime_dir
     SSH_PORT="$(sshd -T | awk '$1 == "port" {print $2}' | paste -sd, -)"
     # Both supported Ubuntu LTS releases may use ssh.socket.
     if systemctl is-active --quiet ssh.socket; then
@@ -1386,6 +1416,7 @@ final_report() {
 
   echo
   echo "SSH effective settings:"
+  ensure_sshd_runtime_dir
   sshd -T 2>/dev/null | awk '/^(pubkeyauthentication|passwordauthentication|kbdinteractiveauthentication|permitemptypasswords|permitrootlogin|x11forwarding|authenticationmethods|authorizedkeysfile|pubkeyacceptedalgorithms|port) / {print "  " $0}' || true
   echo "  Active authorized keys: $(grep -cE '^(ssh-|ecdsa-|sk-)' /root/.ssh/authorized_keys || true)"
   ssh-keygen -lf /root/.ssh/authorized_keys -E sha256 || true
@@ -1497,6 +1528,7 @@ main() {
   # Refresh indexes for newly enabled ESM repositories even with --no-upgrade.
   apt_update
   full_upgrade_and_cleanup
+  check_systemd_manager
   configure_ssh
   configure_resolved
   configure_sysctl
