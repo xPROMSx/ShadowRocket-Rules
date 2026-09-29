@@ -8,7 +8,7 @@ export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 
 # Ubuntu 24.04 LTS VPS bootstrap.
 # Target: safe SSH hardening, DNS-over-TLS, Ubuntu Pro/Livepatch, unattended upgrades with 04:38 reboot,
-# fail2ban, basic network tuning for proxy workloads.
+# fail2ban, UFW, fixed APT timers and basic network tuning for proxy workloads.
 # Requirements: run as root; /root/.ssh/authorized_keys must already contain your public key.
 
 TIMEZONE="${TIMEZONE:-Europe/Moscow}"
@@ -27,6 +27,10 @@ WARNINGS=()
 FAILED_CHECKS=()
 PASSED_CHECKS=()
 VALID_KEY_TYPES=()
+DETECTED_SSH_PORTS=()
+CURRENT_SSH_PORT=""
+UFW_GUARD=""
+declare -A APT_UNIT_ENABLED=() APT_UNIT_ACTIVE=()
 
 trap 'printf "ERROR at line %s (command omitted to protect secrets)\n" "$LINENO" >&2' ERR
 trap 'exit 130' INT
@@ -148,18 +152,24 @@ commit_transaction() {
 
 rollback_transaction() {
   local i service="$TX_SERVICE"
+  if [[ "$service" == ufw ]]; then
+    # Only entered for a firewall that was inactive before this transaction.
+    ufw --force disable || return 1
+    cancel_ufw_guard || return 1
+  fi
   for i in "${!TX_FILES[@]}"; do
     rm -f -- "${TX_FILES[$i]}" || return 1
     if [[ -e "$STATE_DIR/tx-$i" || -L "$STATE_DIR/tx-$i" ]]; then
       cp -a -- "$STATE_DIR/tx-$i" "${TX_FILES[$i]}" || return 1
     fi
   done
-  commit_transaction
   case "$service" in
     ssh) systemctl reload ssh || warn "Could not reload restored SSH configuration" ;;
     systemd-resolved) systemctl restart systemd-resolved || warn "Could not restart restored DNS" ;;
     fail2ban) systemctl restart fail2ban || warn "Could not restart restored fail2ban" ;;
+    apt-timers) restore_apt_units || return 1 ;;
   esac
+  commit_transaction
 }
 
 finish() {
@@ -265,6 +275,7 @@ apt_install_base_packages() {
       unattended-upgrades \
       ubuntu-pro-client \
       fail2ban \
+      ufw \
       nftables
 
   pass_check "Base packages installed"
@@ -390,6 +401,7 @@ protect_manual_packages() {
     ubuntu-pro-client
     unattended-upgrades
     fail2ban
+    ufw
     nftables
   )
 
@@ -576,10 +588,125 @@ EOF
   fi
 }
 
+ensure_apt_units() {
+  local unit missing=0
+  for unit in apt-daily.timer apt-daily-upgrade.timer apt-daily.service apt-daily-upgrade.service; do
+    if [[ ! -s "/usr/lib/systemd/system/$unit" && ! -s "/lib/systemd/system/$unit" ]]; then
+      missing=1
+    fi
+  done
+  if (( missing )); then
+    log "Restore missing vendor units from the apt package"
+    apt-get -o DPkg::Lock::Timeout=600 -o Dpkg::Options::="--force-confold" \
+      --no-remove --reinstall -y install apt || return 1
+  fi
+  for unit in apt-daily.timer apt-daily-upgrade.timer apt-daily.service apt-daily-upgrade.service; do
+    [[ -s "/usr/lib/systemd/system/$unit" || -s "/lib/systemd/system/$unit" ]] || return 1
+  done
+}
+
+remember_apt_units() {
+  local unit
+  for unit in apt-daily.timer apt-daily-upgrade.timer apt-daily.service apt-daily-upgrade.service; do
+    APT_UNIT_ENABLED[$unit]="$(systemctl is-enabled "$unit" 2>/dev/null || true)"
+    APT_UNIT_ACTIVE[$unit]="$(systemctl is-active "$unit" 2>/dev/null || true)"
+  done
+}
+
+restore_apt_units() {
+  local unit state
+  systemctl daemon-reload || return 1
+  for unit in apt-daily.timer apt-daily-upgrade.timer apt-daily.service apt-daily-upgrade.service; do
+    state="${APT_UNIT_ENABLED[$unit]:-}"
+    # Never interrupt an APT service that may currently be installing packages.
+    if [[ "$unit" == *.timer ]]; then
+      if [[ "${APT_UNIT_ACTIVE[$unit]:-}" == active ]]; then
+        systemctl restart "$unit" || return 1
+      else
+        systemctl stop "$unit" || return 1
+      fi
+      if [[ "$state" == disabled || "$state" == masked* ]]; then
+        systemctl disable "$unit" || return 1
+      fi
+    fi
+    case "$state" in
+      masked) systemctl mask "$unit" || return 1 ;;
+      masked-runtime) systemctl mask --runtime "$unit" || return 1 ;;
+    esac
+  done
+}
+
+verify_apt_timer() {
+  local unit="$1" time="$2" calendar next actual
+  [[ "$(systemctl show "$unit" -p LoadState --value)" == loaded ]] || return 1
+  [[ "$(systemctl is-enabled "$unit")" == enabled ]] || return 1
+  systemctl is-active --quiet "$unit" || return 1
+  [[ "$(systemctl show "$unit" -p RandomizedDelayUSec --value)" == 0 ]] || return 1
+  [[ "$(systemctl show "$unit" -p Persistent --value)" == yes ]] || return 1
+  [[ "$(systemctl show "$unit" -p AccuracyUSec --value)" == 1s ]] || return 1
+  # Check what PID 1 loaded, not just the contents of our drop-in.
+  calendar="$(systemctl show "$unit" -p TimersCalendar --value)" || return 1
+  python3 - "$calendar" "$time" <<'PY' || return 1
+import re, sys
+values = re.findall(r'OnCalendar=(.*?)\s*;', sys.argv[1])
+assert values == ['*-*-* ' + sys.argv[2] + ':00 Europe/Moscow'], values
+PY
+  [[ -z "$(systemctl show "$unit" -p TimersMonotonic --value)" ]] || return 1
+  next="$(systemctl show "$unit" -p NextElapseUSecRealtime --value)" || return 1
+  if [[ -n "$next" && "$next" != n/a ]]; then
+    actual="$(TZ=Europe/Moscow date -d "$next" +%H:%M:%S)" || return 1
+    [[ "$actual" == "$time:00" ]] || return 1
+  elif systemctl is-active --quiet "${unit%.timer}.service"; then
+    # Persistent catch-up can already be running; the timer waits for the service.
+    systemd-analyze calendar "*-*-* $time:00 Europe/Moscow" >/dev/null || return 1
+    warn "$unit is waiting for its running APT service; verified calendar, next elapse not yet published"
+  else
+    return 1
+  fi
+}
+
+configure_apt_timers() {
+  local unit time
+  for unit in apt-daily.timer apt-daily-upgrade.timer; do
+    time=02:30
+    [[ "$unit" != apt-daily-upgrade.timer ]] || time=02:50
+    cat > "/etc/systemd/system/$unit.d/90-proms-schedule.conf" <<EOF || return 1
+# Managed by vps-bootstrap-ubuntu24.sh
+[Timer]
+OnCalendar=
+OnCalendar=*-*-* $time:00 Europe/Moscow
+RandomizedDelaySec=0
+AccuracySec=1s
+Persistent=true
+EOF
+  done
+  systemctl daemon-reload || return 1
+  local -a units=(apt-daily.timer apt-daily-upgrade.timer apt-daily.service apt-daily-upgrade.service)
+  systemctl unmask "${units[@]}" || return 1
+  systemctl unmask --runtime "${units[@]}" || return 1
+  systemctl daemon-reload || return 1
+  for unit in "${units[@]}"; do
+    [[ "$(systemctl show "$unit" -p LoadState --value)" == loaded ]] || return 1
+  done
+  systemctl enable --now apt-daily.timer apt-daily-upgrade.timer || return 1
+  # enable --now does not reschedule an already active timer.
+  systemctl restart apt-daily.timer apt-daily-upgrade.timer || return 1
+  verify_apt_timer apt-daily.timer 02:30 || return 1
+  verify_apt_timer apt-daily-upgrade.timer 02:50 || return 1
+}
+
 configure_unattended_upgrades() {
   log "Configure unattended upgrades with automatic reboot at ${AUTO_REBOOT_TIME} ${TIMEZONE}"
 
-  begin_transaction apt /etc/apt/apt.conf.d/20auto-upgrades /etc/apt/apt.conf.d/90-proms-unattended-upgrades
+  if ! ensure_apt_units; then
+    fail_check "APT vendor units missing and could not be restored from apt; automatic updates are not ready"
+    return 0
+  fi
+  install -d -m 755 /etc/systemd/system/apt-daily.timer.d /etc/systemd/system/apt-daily-upgrade.timer.d
+  remember_apt_units
+  begin_transaction apt-timers /etc/apt/apt.conf.d/20auto-upgrades /etc/apt/apt.conf.d/90-proms-unattended-upgrades \
+    /etc/systemd/system/apt-daily.timer.d/90-proms-schedule.conf \
+    /etc/systemd/system/apt-daily-upgrade.timer.d/90-proms-schedule.conf
   cat > /etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
 APT::Periodic::Enable "1";
 APT::Periodic::Update-Package-Lists "1";
@@ -597,10 +724,11 @@ Unattended-Upgrade::Automatic-Reboot-WithUsers "true";
 Unattended-Upgrade::Automatic-Reboot-Time "${AUTO_REBOOT_TIME}";
 EOF
 
-  # Add required security origins without deleting administrator-defined origins.
+  # Add stable updates and security origins without deleting administrator origins.
   cat >> /etc/apt/apt.conf.d/90-proms-unattended-upgrades <<'EOF'
 Unattended-Upgrade::Allowed-Origins {
   "${distro_id}:${distro_codename}-security";
+  "${distro_id}:${distro_codename}-updates";
   "${distro_id}ESMApps:${distro_codename}-apps-security";
   "${distro_id}ESM:${distro_codename}-infra-security";
 };
@@ -620,6 +748,7 @@ expected = {
 bad = [k for k, v in expected.items() if c.find(k).lower() != v]
 required = {
     "${distro_id}:${distro_codename}-security",
+    "${distro_id}:${distro_codename}-updates",
     "${distro_id}ESMApps:${distro_codename}-apps-security",
     "${distro_id}ESM:${distro_codename}-infra-security",
 }
@@ -634,7 +763,11 @@ PY
     fail_check "Effective unattended-upgrades settings were overridden; inspect apt-config dump"
     return 0
   fi
-  systemctl enable --now apt-daily.timer apt-daily-upgrade.timer
+  if ! configure_apt_timers; then
+    rollback_transaction
+    fail_check "Effective APT timer schedule is invalid; previous files and timer states restored"
+    return 0
+  fi
   systemctl enable --now unattended-upgrades
 
   if systemctl is-active --quiet unattended-upgrades &&
@@ -642,10 +775,242 @@ PY
      systemctl is-active --quiet apt-daily-upgrade.timer; then
     commit_transaction
     pass_check "unattended-upgrades enabled; automatic reboot set to ${AUTO_REBOOT_TIME} ${TIMEZONE}"
+    pass_check "APT timers: 02:30 and 02:50 Europe/Moscow, no random delay, persistent"
   else
     rollback_transaction
     fail_check "unattended-upgrades or its APT timers are not active"
   fi
+}
+
+detect_ssh_ports() {
+  local socket="" effective
+  effective="$(sshd -T)" || return 1
+  if systemctl is-active --quiet ssh.socket; then
+    socket="$(systemctl show ssh.socket -p Listen --value)" || return 1
+    [[ -n "$socket" ]] || return 1
+  fi
+  ss -H -ltnp > "$STATE_DIR/ssh-listeners" || return 1
+  ss -H -tnp > "$STATE_DIR/ssh-connections" || return 1
+  python3 - "$effective" "$socket" "${SSH_CONNECTION:-}" "$STATE_DIR" <<'PY' || return 1
+import ipaddress, os, pathlib, re, sys
+effective, socket, connection, directory = sys.argv[1:]
+root = pathlib.Path(directory)
+def port(value):
+    if not value.isdecimal() or not 1 <= int(value) <= 65535:
+        raise ValueError('Invalid TCP port: ' + value)
+    return int(value)
+def endpoint(value):
+    host, p = value.rsplit(':', 1)
+    return host.strip('[]').split('%')[0], port(p)
+def address(value):
+    ip = ipaddress.ip_address(value)
+    return getattr(ip, 'ipv4_mapped', None) or ip
+configured = {port(p) for p in re.findall(r'^port (\S+)$', effective, re.M)}
+if not configured:
+    raise ValueError('sshd -T returned no ports')
+expected = configured
+if socket:
+    # Socket activation can override sshd Port. Do not open stale config ports.
+    listeners = re.findall(r'(\S+) \(Stream\)', socket)
+    if not listeners:
+        raise ValueError('Cannot parse active ssh.socket listeners')
+    expected = {port(v) if v.isdecimal() else endpoint(v)[1] for v in listeners}
+live = set()
+for line in (root / 'ssh-listeners').read_text().splitlines():
+    fields = line.split()
+    if len(fields) >= 6 and ('"sshd' in line or (socket and '"systemd"' in line)):
+        live.add(endpoint(fields[3])[1])
+if not expected.issubset(live):
+    raise ValueError('Configured SSH ports are not confirmed by live TCP listeners')
+current = '-'
+if connection:
+    remote, rp, local, lp = connection.split()  # Reject missing/extra fields.
+    rp, lp = port(rp), port(lp)
+    remote, local = address(remote), address(local)
+    if lp not in expected:
+        raise ValueError('Current SSH port disagrees with live SSH listeners')
+    matched = False
+    for line in (root / 'ssh-connections').read_text().splitlines():
+        f = line.split()
+        if len(f) < 6 or f[0] != 'ESTAB' or '"sshd' not in line:
+            continue
+        lh, lport = endpoint(f[3]); rh, rport = endpoint(f[4])
+        if (address(lh), lport, address(rh), rport) == (local, lp, remote, rp):
+            matched = True
+    if not matched:
+        raise ValueError('SSH_CONNECTION is not confirmed by an established sshd connection')
+    current = str(lp)
+else:
+    # sudo may discard SSH_CONNECTION. Do not mistake that for a local console.
+    pid = os.getppid()
+    seen = set()
+    remote_context = bool(os.environ.get('SSH_CLIENT') or os.environ.get('SSH_TTY'))
+    while pid > 1 and pid not in seen:
+        seen.add(pid)
+        status = pathlib.Path('/proc', str(pid), 'status').read_text()
+        name = re.search(r'^Name:\s*(.*)$', status, re.M).group(1)
+        remote_context |= name.startswith('sshd')
+        pid = int(re.search(r'^PPid:\s*(\d+)$', status, re.M).group(1))
+    if remote_context:
+        raise ValueError('Remote SSH context found but SSH_CONNECTION is missing')
+(root / 'ssh-ports').write_text(current + '\n' + ''.join(str(p)+'\n' for p in sorted(expected)), newline='\n')
+PY
+  local -a result
+  mapfile -t result < "$STATE_DIR/ssh-ports"
+  CURRENT_SSH_PORT="${result[0]}"
+  DETECTED_SSH_PORTS=("${result[@]:1}")
+  [[ ${#DETECTED_SSH_PORTS[@]} -gt 0 ]]
+}
+
+cancel_ufw_guard() {
+  [[ -n "$UFW_GUARD" ]] || return 0
+  # Stop the timer, not a rollback service which may already be disabling UFW.
+  if ! systemctl stop "$UFW_GUARD.timer"; then
+    # systemd-run may have failed before creating the transient timer.
+    [[ "$(systemctl show "$UFW_GUARD.timer" -p LoadState --value)" == not-found ]] || return 1
+  fi
+  if systemctl is-active --quiet "$UFW_GUARD.service"; then
+    return 1
+  fi
+  UFW_GUARD=""
+}
+
+ufw_ssh_rules_ok() {
+  # Read actual rule files before activation, kernel rules afterwards. Require
+  # unconditional TCP ACCEPT before any possibly conflicting user rule.
+  python3 - "$1" "${2:-ufw}" "${DETECTED_SSH_PORTS[@]}" <<'PY'
+import pathlib, shlex, sys
+needed = set(sys.argv[3:])
+remaining = set(needed)
+for line in pathlib.Path(sys.argv[1]).read_text().splitlines():
+    if not line.startswith('-A ' + sys.argv[2] + '-user-input '):
+        continue
+    f = shlex.split(line)
+    # Recognise only plain unconditional TCP port accepts; be conservative
+    # about subnet/interface rules, REJECT, DROP, LIMIT and custom jumps.
+    if len(f) >= 8 and f[2:4] == ['-p', 'tcp']:
+        tail = f[4:]
+        if tail[:2] == ['-m', 'tcp']:
+            tail = tail[2:]
+        if len(tail) == 4 and tail[0] == '--dport' and tail[2:] == ['-j', 'ACCEPT']:
+            remaining.discard(tail[1])
+            if not remaining:
+                break
+            continue
+    if remaining:
+        raise ValueError('Existing user rule may precede SSH allows; firewall not safe to activate')
+if remaining:
+    raise ValueError('Missing unconditional SSH accepts: ' + ','.join(sorted(remaining)))
+PY
+}
+
+verify_ufw() {
+  local status
+  status="$(ufw status verbose)" || return 1
+  grep -qx 'Status: active' <<< "$status" || return 1
+  grep -q '^Default: deny (incoming), allow (outgoing),' <<< "$status" || return 1
+  [[ "$(systemctl is-enabled ufw.service)" == enabled ]] || return 1
+  grep -Eq '^ENABLED=yes$' /etc/ufw/ufw.conf || return 1
+  iptables-save -t filter > "$STATE_DIR/ufw-live4" || return 1
+  ip6tables-save -t filter > "$STATE_DIR/ufw-live6" || return 1
+  ufw_ssh_rules_ok "$STATE_DIR/ufw-live4" || return 1
+  ufw_ssh_rules_ok "$STATE_DIR/ufw-live6" ufw6 || return 1
+  # Verify the default policies in the kernel as well as in UFW's report.
+  local file prefix
+  for file in "$STATE_DIR/ufw-live4" "$STATE_DIR/ufw-live6"; do
+    prefix=ufw
+    [[ "$file" != "$STATE_DIR/ufw-live6" ]] || prefix=ufw6
+    grep -q '^:INPUT DROP ' "$file" || return 1
+    grep -q '^:OUTPUT ACCEPT ' "$file" || return 1
+    grep -q "^-A INPUT -j $prefix-before-input$" "$file" || return 1
+    grep -q "^-A $prefix-before-input -j $prefix-user-input$" "$file" || return 1
+    grep -q "^-A $prefix-before-input -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT$" "$file" || return 1
+  done
+}
+
+configure_ufw() {
+  log "Configure UFW only if it is currently inactive"
+  local status port file forwarding
+  if ! status="$(ufw status)"; then
+    fail_check "Cannot determine UFW state; firewall not changed"
+    return 0
+  fi
+  if grep -qx 'Status: active' <<< "$status"; then
+    pass_check "UFW already active: all firewall configuration skipped, existing rules and policies preserved"
+    return 0
+  fi
+  if ! grep -qx 'Status: inactive' <<< "$status"; then
+    fail_check "Unknown UFW state; firewall not changed"
+    return 0
+  fi
+  if ! detect_ssh_ports; then
+    fail_check "Cannot safely confirm live SSH ports/current session; UFW remains disabled"
+    return 0
+  fi
+  # Flushing built-in chains would interfere with other firewall owners.
+  # Do not silently enable an IPv4-only firewall on a dual-stack VPS.
+  if ! grep -Eq '^MANAGE_BUILTINS=no$' /etc/default/ufw ||
+     ! grep -Eq '^IPV6=yes$' /etc/default/ufw; then
+    fail_check "UFW requires MANAGE_BUILTINS=no and IPV6=yes; existing settings preserved, activation skipped"
+    return 0
+  fi
+  # An inactive firewall can contain custom pre-user DROP rules or executable
+  # hooks. They cannot be proven safe from an SSH allow alone; preserve them.
+  for file in before.rules before6.rules after.rules after6.rules; do
+    if ! cmp -s "/etc/ufw/$file" "/usr/share/ufw/iptables/$file"; then
+      fail_check "Custom/missing UFW $file requires manual review; firewall remains disabled"
+      return 0
+    fi
+  done
+  if [[ -x /etc/ufw/before.init || -x /etc/ufw/after.init ]]; then
+    fail_check "Custom UFW hooks require manual review; firewall remains disabled"
+    return 0
+  fi
+  if ! forwarding="$(sysctl -n net.ipv4.ip_forward net.ipv6.conf.all.forwarding)"; then
+    fail_check "Cannot check forwarding before UFW activation; firewall remains disabled"
+    return 0
+  fi
+  if grep -qx 1 <<< "$forwarding" &&
+     ! grep -Eq '^DEFAULT_FORWARD_POLICY="?ACCEPT"?$' /etc/default/ufw; then
+    fail_check "Forwarding is active but UFW routed policy is restrictive; preserve routing and enable UFW manually"
+    return 0
+  fi
+  begin_transaction ufw /etc/default/ufw /etc/ufw/ufw.conf /etc/ufw/user.rules /etc/ufw/user6.rules
+  for port in "${DETECTED_SSH_PORTS[@]}"; do
+    if ! ufw prepend allow "$port/tcp"; then
+      rollback_transaction
+      fail_check "Could not add SSH allow rules; UFW remains disabled"
+      return 0
+    fi
+  done
+  if ! ufw_ssh_rules_ok /etc/ufw/user.rules || ! ufw_ssh_rules_ok /etc/ufw/user6.rules ufw6; then
+    rollback_transaction
+    fail_check "SSH allow rules could not be confirmed before UFW activation; original rules restored"
+    return 0
+  fi
+  # Independent rollback survives this shell disconnecting or being killed.
+  UFW_GUARD="proms-ufw-rollback-$$"
+  if ! systemd-run --quiet --unit="$UFW_GUARD" --on-active=120s --timer-property=AccuracySec=1s \
+       /usr/sbin/ufw --force disable || ! systemctl is-active --quiet "$UFW_GUARD.timer"; then
+    rollback_transaction
+    fail_check "Cannot arm independent UFW rollback; activation skipped"
+    return 0
+  fi
+  # SSH allows were written and verified before either restrictive policy or enable.
+  # Leave the routed/forward policy and all other nftables tables untouched.
+  if ! ufw default deny incoming || ! ufw default allow outgoing ||
+     ! ufw --force enable || ! systemctl enable ufw.service || ! verify_ufw; then
+    rollback_transaction
+    fail_check "UFW activation/verification failed; firewall disabled and original files restored"
+    return 0
+  fi
+  if ! cancel_ufw_guard || ! verify_ufw; then
+    rollback_transaction
+    fail_check "UFW rollback guard or final verification failed; activation reverted"
+    return 0
+  fi
+  commit_transaction
+  pass_check "UFW active and enabled at boot; incoming deny, outgoing allow; SSH TCP ports: ${DETECTED_SSH_PORTS[*]} (current: $CURRENT_SSH_PORT)"
 }
 
 configure_fail2ban() {
@@ -750,6 +1115,12 @@ final_report() {
   systemctl is-enabled unattended-upgrades 2>/dev/null | sed 's/^/  unattended-upgrades enabled: /' || true
   systemctl is-active unattended-upgrades 2>/dev/null | sed 's/^/  unattended-upgrades active: /' || true
   echo "  automatic reboot time: ${AUTO_REBOOT_TIME} (${TIMEZONE})"
+  systemctl list-timers apt-daily.timer apt-daily-upgrade.timer --all --no-pager || true
+
+  echo
+  echo "UFW status and rules:"
+  ufw status verbose || true
+  ufw show added || true
 
   echo
   echo "Ubuntu Pro status:"
@@ -828,6 +1199,7 @@ main() {
   configure_resolved
   configure_sysctl
   configure_unattended_upgrades
+  configure_ufw
   configure_fail2ban
   final_report
 }
