@@ -8,7 +8,7 @@
 set -eu
 umask 077
 export LC_ALL=C
-SCRIPT_VERSION="4.0.2"
+SCRIPT_VERSION="4.0.3"
 PROXY="${PROXY:-http://192.168.1.11:1088}"
 MAIN_PKG=luci-app-passwall2
 KEY_SHA256=52802b143489214e13b78f96599a147a638205cc22d9dd6d71229504e38ddc00
@@ -163,8 +163,23 @@ release_component() {
     awk -F '|' -v p="$1" 'index($1,p) {v=$2; gsub(/[*[:space:]`]/,"",v); print v}' "$TMP_ROOT/release-body"
 }
 
+# Release tables describe a packaging baseline, not an exact runtime pin.
+# Select the current signed-feed package, including upstream prereleases.
+select_core_package() {
+    local pkg="$1" baseline="$2" actual="$3" old="$4" available upstream
+    available=$(repository_best "$pkg")
+    [ -n "$available" ] || die "Signed feed has no $pkg package for this firmware/architecture."
+    upstream=${available%-r*}
+    [ "$(compare "$upstream" "$baseline")" != '<' ] || die "$pkg feed version $available is below release baseline $baseline. Nothing installed."
+    if [ -n "$actual" ]; then
+        [ "$(compare "$actual" "$upstream")" != '>' ] || die "$pkg runtime $actual is newer than feed $upstream; automatic downgrade blocked."
+    fi
+    [ -z "$old" ] || [ "$(compare "$old" "$available")" != '>' ] || die "$pkg APK downgrade blocked."
+    printf '%s\n' "$available"
+}
+
 select_targets() {
-    local installed available tag actual metadata_tag component pkg path expect target old cfg pw_version latest
+    local installed available tag actual metadata_tag component pkg path expect target old cfg pw_version latest baseline
     installed=$(installed_version "$MAIN_PKG")
     if [ "$MODE" = update ]; then
         [ -n "$installed" ] || die 'PassWall2 is missing. Use: check install / install.'
@@ -233,12 +248,12 @@ select_targets() {
         actual=$(runtime_version "$pkg" "$path")
         if [ -x "$path" ]; then
             valid_version "$actual" || die "Cannot identify the actual $pkg runtime at $path."
-            [ "$(compare "$actual" "$target")" != '>' ] || die "$pkg runtime $actual is newer than release bundle $target; automatic downgrade blocked."
         fi
         old=$(installed_version "$pkg")
-        available=$(repository_best "$pkg" "$target")
-        [ -n "$available" ] || die "Signed feed has no $pkg $target. Wait for the feed; the working installation is unchanged."
-        [ -z "$old" ] || [ "$(compare "$old" "$available")" != '>' ] || die "$pkg APK downgrade blocked."
+        baseline=$target
+        available=$(select_core_package "$pkg" "$baseline" "$actual" "$old") || exit 1
+        target=${available%-r*}
+        info "$pkg release bundle baseline: $baseline; selected signed-feed runtime: $target (core prereleases are allowed)."
         info "$pkg runtime: ${actual:-absent} -> $target; APK: ${old:-absent} -> $available"
         printf '%s=%s\n' "$pkg" "$available" >> "$TMP_ROOT/targets"
         printf '%s\n' "$pkg" >> "$TMP_ROOT/managed"
@@ -596,7 +611,8 @@ print_commands() {
   sh /root/passwall2-apk-repo.sh status
   sh /root/passwall2-apk-repo.sh help
 
---allow-prerelease разрешает только предварительный релиз.
+--allow-prerelease разрешает предварительный релиз PassWall2.
+Предварительные версии ядер из подписанного репозитория разрешены без флага.
 Остальные проверки сохраняются. Пакеты берутся из репозитория.
 Ошибка check требует разбора; этот список не означает,
 что проверка прошла успешно или обновление разрешено.
