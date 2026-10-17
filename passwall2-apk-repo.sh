@@ -555,6 +555,32 @@ proxy_processes() {
         case "$exe" in /usr/bin/xray|/usr/bin/sing-box) printf '%s\n' "${entry%/cmdline}";; esac
     done
 }
+
+start_service() {
+    local svc="$1" rc log="$LAST_BACKUP/start-$1.log"
+    info "Starting $svc (up to 180 seconds; output: $log)."
+    # Building nftables sets/ACLs can exceed 40s on a working installation.
+    # Keep the exit code: a timeout is not proof of package incompatibility.
+    if timeout 180 "/etc/init.d/$svc" start > "$log" 2>&1; then
+        printf '0\n' > "$LAST_BACKUP/start-$svc.exit-code"
+        return 0
+    else
+        rc=$?
+    fi
+    printf '%s\n' "$rc" > "$LAST_BACKUP/start-$svc.exit-code"
+    cat "$log" >&2
+    case "$rc" in
+        124|137|143)
+            warn "$svc start was interrupted (exit $rc; possible 180-second timeout). This alone does not establish a proxy failure."
+            ;;
+        *) warn "$svc start returned exit $rc. See $log.";;
+    esac
+    # Do not restart or roll back a potentially working instance automatically.
+    # Process presence alone cannot prove completion of firewall/DNS setup.
+    warn "Current PassWall2 core processes: $(proxy_processes | tr '\n' ' ')"
+    die "$svc startup was not confirmed. Packages were installed; inspect the service log and current connectivity before retrying."
+}
+
 postcheck() {
     local enabled socks acl n=0 list proc exe config asset
     enabled=$(uci -q get 'passwall2.@global[0].enabled' || true)
@@ -718,14 +744,14 @@ main() {
     else
         /etc/init.d/passwall2 disable
     fi
-    timeout 40 /etc/init.d/passwall2 start || die 'PassWall2 start failed.'
+    start_service passwall2
     if [ -x /etc/init.d/passwall2_server ]; then
         if [ "$SERVER_ENABLED" = 1 ] || [ "$MODE" = install ]; then
             /etc/init.d/passwall2_server enable
         else
             /etc/init.d/passwall2_server disable
         fi
-        timeout 40 /etc/init.d/passwall2_server start || die 'PassWall2 server start failed.'
+        start_service passwall2_server
     fi
     postcheck
     info "Completed. Settings preserved. Backup/logs: $LAST_BACKUP"
